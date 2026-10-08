@@ -1,0 +1,29 @@
+{
+  "client_id": "CLIENT-UCH-001",
+  "client_name": "UC Health System",
+  "client_type": "HealthCare System",
+  "ehr_system": "Epic Systems EHR / Lawson ERP",
+  "s3_bucket": "s3://supplycopia-client-data-lake/clients/uc_health/",
+  "sources": {
+    "consumption": "UHC_Consumption.csv",
+    "purchase_orders": "UHC_PO_20260930010955.csv",
+    "contracts": "UHC_CON_20260930010958.csv",
+    "item_master": "UHC_IM_20260930010918.csv",
+    "invoices": "UHC_INV_20260930010902.csv"
+  },
+  "join_topology": {
+    "consumption_to_contracts": {
+      "join_type": "left",
+      "keys": ["contract_id", "item_number"]
+    },
+    "po_to_invoices": {
+      "join_type": "left",
+      "keys": ["po_number", "line_num"]
+    }
+  },
+  "snowflake_target": {
+    "database": "SUPPLYCOPIA_TRANSFORM",
+    "schema": "SCRETAIL_IMPORT",
+    "table_prefix": "SC_UCH"
+  }
+}

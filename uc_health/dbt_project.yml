@@ -1,0 +1,46 @@
+
+# Name your project! Project names should contain only lowercase characters
+# and underscores. A good package name should reflect your organization's
+# name or the intended use of these models
+name: 'uc_health'
+version: '1.0.0'
+
+# This setting configures which "profile" dbt uses for this project.
+profile: 'uc_health'
+
+# These configurations specify where dbt should look for different types of files.
+# The `model-paths` config, for example, states that models in this project can be
+# found in the "models/" directory. You probably won't need to change these!
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+clean-targets:         # directories to be removed by `dbt clean`
+  - "target"
+  - "dbt_packages"
+
+vars:
+  po_source_file: "UHC_PO_20260930010955"
+  consumption_source_file: "UHC_Consumption"
+  contracts_source_file: "UHC_CON_20260930010958"
+  item_master_source_file: "UHC_IM_20260930010918"
+  invoice_source_file: "UHC_INV_20260930010902"
+  contract_lookback_days: 180
+  po_invoice_match_window_days: 90
+  price_variance_threshold: 0.005
+
+# Configuring models
+models:
+  uc_health:
+    staging:
+      +materialized: view
+    intermediate:
+      +materialized: table
+    marts:
+      +materialized: table
+    example:
+      +materialized: view
+

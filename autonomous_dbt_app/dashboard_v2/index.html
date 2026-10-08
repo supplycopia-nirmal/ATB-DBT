@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SupplyCopia | Ask The Bee: Autonomous DBT Pipeline Studio</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="app-layout">
+    <!-- Collapsible Left Sidebar for Saved Pipelines -->
+    <aside id="saved-pipelines-sidebar" class="pipelines-sidebar collapsed">
+      <div class="sidebar-header">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span>📁</span>
+          <h3>Saved DBT Pipelines</h3>
+        </div>
+        <button class="btn-icon" onclick="toggleSavedSidebar()" title="Collapse sidebar">&times;</button>
+      </div>
+      <div class="sidebar-body">
+        <div class="sidebar-search">
+          <input type="text" id="pipeline-search-input" placeholder="Search pipelines..." oninput="filterSavedPipelines()">
+        </div>
+        <button class="btn btn-outline-save" onclick="saveCurrentCheckpointPrompt()">
+          💾 Save Current Checkpoint
+        </button>
+        <div class="checkpoints-meta">
+          <span>PIPELINE RECOVERY SNAPSHOTS</span>
+          <span id="saved-count-tag" class="count-pill">0</span>
+        </div>
+        <div id="saved-pipelines-list" class="pipelines-list">
+          <div class="loading">Loading saved pipelines...</div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Sidebar Backdrop Overlay -->
+    <div id="sidebar-backdrop" class="sidebar-backdrop" onclick="toggleSavedSidebar()" style="display:none;"></div>
+
+    <!-- Main Application Container -->
+    <div class="app-container">
+      <!-- Header -->
+      <header class="app-header">
+        <div class="header-left">
+          <div class="brand-badge" onclick="toggleSavedSidebar()" title="Click to view Saved DBT Pipelines">
+            🐝 Ask The Bee <span class="saved-badge-pill" id="header-saved-count">1</span>
+          </div>
+          <div>
+            <h1>Autonomous DBT Pipeline Studio <span class="port-tag">PORT 8081</span></h1>
+          </div>
+        </div>
+        <div class="header-right">
+          <div id="tenant-pill" class="badge badge-primary">Tenant: UC Health (CL_UCH_001)</div>
+          <div id="parity-badge" class="badge badge-success">Parity: 100% Match</div>
+          <div id="status-badge" class="badge badge-primary">State: READY</div>
+          <button class="btn btn-secondary" onclick="openEnterpriseModal()">⚡ Enterprise Suite</button>
+          
+          <!-- Notification Bell -->
+          <div class="notif-bell-wrapper">
+            <button id="btn-notifications" class="notif-btn" onclick="toggleNotificationDrawer()" title="Notifications">
+              🔔
+              <span id="notification-badge" class="notif-badge">2</span>
+            </button>
+            <div id="notification-drawer" class="notif-drawer">
+              <div class="notif-header">
+                <strong>Swarm Notifications</strong>
+                <button class="btn-link" onclick="clearNotifications()">Clear all</button>
+              </div>
+              <div id="notif-items" class="notif-items">
+                <!-- Notifications populated here -->
+              </div>
+            </div>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 6px; background: rgba(15, 23, 42, 0.8); border: 1px solid var(--border-color); border-radius: 8px; padding: 2px 6px;">
+            <label style="font-size: 11px; color: var(--text-muted); font-weight: 600;">Mode:</label>
+            <select id="select-autonomy-mode" class="entity-select" style="background: transparent; border: none; font-size: 12px; font-weight: 600; color: #38bdf8; padding: 4px 6px; cursor: pointer;">
+              <option value="default" style="background:#0f172a; color:#f8fafc;" selected>Default (Step-by-Step HITL)</option>
+              <option value="user_review" style="background:#0f172a; color:#f8fafc;">User Review (Approval Gate)</option>
+              <option value="turbo" style="background:#0f172a; color:#f8fafc;">⚡ Turbo (Full Auto End-to-End)</option>
+            </select>
+          </div>
+
+          <button id="btn-run-pipeline" class="btn btn-primary" onclick="triggerGuidedSwarmWorkflow()">⚡ Run Autonomous Swarm</button>
+          <button id="btn-push-snowflake" class="btn btn-snowflake" onclick="openSnowflakeModal()">❄️ Push to Snowflake</button>
+        </div>
+      </header>
+
+      <!-- Top KPI Bar -->
+      <section class="kpi-banner">
+        <div class="kpi-card">
+          <div class="kpi-label">Total Clinical Spend</div>
+          <div id="kpi-spend" class="kpi-value">$243,934,093.08</div>
+          <div class="kpi-sub">Analyzed Lines: <span id="kpi-items">2,272,908</span></div>
+        </div>
+        <div class="kpi-card highlight">
+          <div class="kpi-label">Contract Match Rate</div>
+          <div id="kpi-match-rate" class="kpi-value">51.92%</div>
+          <div class="kpi-sub">On-Contract: <span id="kpi-matched-count">1,179,985</span></div>
+        </div>
+        <div class="kpi-card success">
+          <div class="kpi-label">Savings Opportunity</div>
+          <div id="kpi-savings" class="kpi-value">$17,211,888.13</div>
+          <div class="kpi-sub">Benchmark: 15% Off-Contract</div>
+        </div>
+        <div class="kpi-card warning">
+          <div class="kpi-label">Identified Overpayment</div>
+          <div id="kpi-overpayment" class="kpi-value">$182,724.87</div>
+          <div class="kpi-sub">Price Variance &gt; Contract</div>
+        </div>
+      </section>
+
+      <!-- 6-Stage Workflow Stepper -->
+      <nav class="workflow-stepper">
+        <button class="step-item active" id="step-btn-ingest" onclick="switchStage('ingest')">
+          <span class="step-num">1</span> ☁️ S3 Ingestion &amp; Tenancy
+        </button>
+        <button class="step-item" id="step-btn-profile" onclick="switchStage('profile')">
+          <span class="step-num">2</span> 🔬 Raw Data Profiling
+        </button>
+        <button class="step-item" id="step-btn-joins" onclick="switchStage('joins')">
+          <span class="step-num">3</span> 🤝 Join Discovery (HITL)
+        </button>
+        <button class="step-item" id="step-btn-lineage" onclick="switchStage('lineage')">
+          <span class="step-num">4</span> 📊 Interactive Lineage &amp; DBT DAG
+        </button>
+        <button class="step-item" id="step-btn-explorer" onclick="switchStage('explorer')">
+          <span class="step-num">5</span> 🔍 Output Explorer &amp; Gaps
+        </button>
+        <button class="step-item" id="step-btn-parity" onclick="switchStage('parity')">
+          <span class="step-num">6</span> 🎯 100% Golden Parity Audit
+        </button>
+      </nav>
+
+      <!-- Stage 1: Cloud Ingestion & Multi-Tenancy -->
+      <section id="stage-ingest" class="stage-section active">
+        <div class="card">
+          <div class="card-header">
+            <h3>Stage 1: Multi-Tenant AWS S3 Cloud Ingestion (Scout Bee Buzz)</h3>
+            <span class="card-hint">Point to any client S3 bucket folder or heterogeneous EHR/ERP format (Epic, Cerner, Lawson, Workday, Excel/CSV). Automatic local staging fallback active.</span>
+          </div>
+          <div class="card-body">
+            <div class="info-callout">
+              <strong>Multi-Tenancy Agnostic Ingestion Engine:</strong> Ingests raw client data, sniffs schemas, and tags every table with <code>client_id</code>, <code>client_name</code>, <code>client_type</code>, and <code>client_ingestion_batch_id</code> for unified SupplyCopia warehouse storage.
+            </div>
+            <div class="ingest-grid">
+              <div class="ingest-col">
+                <div class="form-group">
+                  <label for="input-s3-uri">AWS S3 Bucket Folder URL / URI</label>
+                  <input type="text" id="input-s3-uri" value="s3://supplycopia-client-data-lake/clients/uc_health/raw/batch_2026_q3/" placeholder="s3://my-client-bucket/hospital-data/">
+                  <div class="form-hint">Format: <code>s3://bucket/folder/</code> or <code>https://bucket.s3.amazonaws.com/folder/</code></div>
+                </div>
+                <div class="form-group">
+                  <label for="input-client-name">Client / Health System Name</label>
+                  <input type="text" id="input-client-name" value="UC Health" placeholder="e.g. UC Health, Memorial Hermann, Mayo Clinic">
+                </div>
+                <div class="form-group">
+                  <label for="input-client-id">Client Identifier (Tenant ID)</label>
+                  <input type="text" id="input-client-id" value="CL_UCH_001" placeholder="e.g. CL_UCH_001">
+                </div>
+              </div>
+              <div class="ingest-col">
+                <div class="form-group">
+                  <label for="select-client-type">Client Organization Type</label>
+                  <select id="select-client-type">
+                    <option value="HealthCare System" selected>HealthCare System / IDN</option>
+                    <option value="GPO">Group Purchasing Organization (GPO)</option>
+                    <option value="Ambulatory Services">Ambulatory Surgery Center (ASC)</option>
+                    <option value="Academic Medical Center">Academic Medical Center</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="input-aws-key">AWS Access Key ID (Optional)</label>
+                  <input type="password" id="input-aws-key" placeholder="AKIA... (Optional, falls back to env or local staging)">
+                </div>
+                <div class="form-group">
+                  <label for="input-aws-secret">AWS Secret Access Key (Optional)</label>
+                  <input type="password" id="input-aws-secret" placeholder="••••••••••••••••••••••••••••••••">
+                </div>
+              </div>
+            </div>
+            <div class="ingest-actions">
+              <button class="btn btn-primary" onclick="triggerIngestion()">📥 Fetch Datasets &amp; Profile</button>
+            </div>
+            <div id="ingest-status-msg" style="margin-top: 15px; font-weight: 500;"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Stage 2: Raw Data Profiling -->
+      <section id="stage-profile" class="stage-section">
+        <div class="card">
+          <div class="card-header flex-header">
+            <div>
+              <h3>Stage 2: Raw Client Data Profiling &amp; Auto-Classification</h3>
+              <span class="card-hint">Canonical UC Health sources auto-selected. Edit classification or toggle files for downstream pipeline execution.</span>
+            </div>
+            <div class="controls" style="display: flex; gap: 8px;">
+              <button id="btn-filter-canonical" class="btn btn-primary btn-sm" onclick="setProfileFilter('canonical')">⭐ Canonical Sources (5)</button>
+              <button id="btn-filter-all" class="btn btn-secondary btn-sm" onclick="setProfileFilter('all')">📁 All Discovered (12)</button>
+              <button class="btn btn-secondary btn-sm" onclick="loadRawProfile()">🔄 Refresh</button>
+            </div>
+          </div>
+          <div class="card-body">
+            <div id="missing-mitigation-box" class="mitigation-box" style="display: none;"></div>
+            <h4>Discovered Datasets:</h4>
+            <div id="profile-cards-grid" class="cards-grid">
+              <div class="loading">Profiling datasets in client repository...</div>
+            </div>
+
+            <div id="raw-sample-section" style="margin-top: 30px; display: none;">
+              <div class="flex-header" style="margin-bottom: 12px;">
+                <h4 id="sample-table-title">Raw Data Sample Viewer:</h4>
+                <span id="sample-row-counter" class="card-hint"></span>
+              </div>
+              <div class="table-container" style="max-height: 380px;">
+                <table class="data-table" id="sample-data-table">
+                  <thead id="sample-table-head"></thead>
+                  <tbody id="sample-table-body"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Stage 3: Join Discovery (HITL) -->
+      <section id="stage-joins" class="stage-section">
+        <div class="card">
+          <div class="card-header flex-header">
+            <div>
+              <h3>Stage 3: SupplyCopia Join Discovery &amp; Topology Validation (HITL)</h3>
+              <span class="card-hint">Multi-tier foreign key cascades synthesized by Architect Bee Pollen. Operator review and modification gate.</span>
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <button class="btn btn-secondary btn-sm" onclick="openTopologyEditModal()">✏️ Edit Topology &amp; Matching Rules</button>
+              <button class="btn btn-success btn-sm" onclick="confirmJoinsAndProceed()">✓ Confirm &amp; Proceed</button>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="hitl-banner">
+              <div>
+                <strong>Human-In-The-Loop Checkpoint:</strong> Review discovered foreign key relationships, 4-tier item master matching cascades, and 3-tier contract pricing matching logic before compiling dbt models.
+              </div>
+            </div>
+            <h4>Synthesized Cross-Dataset Joins:</h4>
+            <div class="table-container" style="margin-bottom: 24px;">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Join ID</th>
+                    <th>Left Dataset</th>
+                    <th>Join Type</th>
+                    <th>Right Dataset</th>
+                    <th>Matching Rules / Keys</th>
+                    <th>Description</th>
+                  </tr>
+                </thead>
+                <tbody id="joins-tbody">
+                  <tr><td colspan="6" class="loading">Loading join graph...</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <h4>Applicable SupplyCopia Standard Transformations:</h4>
+            <div class="table-container">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Rule ID</th>
+                    <th>Transformation Name</th>
+                    <th>Target Layer</th>
+                    <th>Implementation Standard</th>
+                  </tr>
+                </thead>
+                <tbody id="transforms-tbody">
+                  <tr><td colspan="4" class="loading">Loading transformation catalog...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Stage 4: Official Embedded DBT Visual Lineage & Documentation -->
+      <section id="stage-lineage" class="stage-section">
+        <div class="card" style="padding: 0; overflow: hidden;">
+          <div class="section-header" style="padding: 20px 20px 0 20px; display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px;">
+            <div>
+              <h2 style="font-size: 20px; font-weight: 700; margin: 0 0 6px 0;">DBT Visual Lineage</h2>
+              <p class="section-desc" style="color: var(--text-muted); margin: 0; font-size: 13px;">Interactive Directed Acyclic Graph (DAG) demonstrating data provenance and pipeline models.</p>
+            </div>
+            <div class="dag-controls" style="display: flex; gap: 8px;">
+              <button class="dag-btn active" id="btn-view-dbt-dag" onclick="switchDbtIframe('graph')">📊 Interactive Lineage DAG</button>
+              <button class="dag-btn" id="btn-view-dbt-overview" onclick="switchDbtIframe('overview')">🗄️ Project &amp; Database Documentation</button>
+              <button class="dag-btn" onclick="reloadDbtIframe()" title="Refresh documentation">🔄 Reload Docs</button>
+              <button class="dag-btn" onclick="openDbtFullscreen()" title="Open docs in fullscreen">⛶ Fullscreen</button>
+            </div>
+          </div>
+          <!-- Embedded Official dbt-docs application matching UC Health on Port 8080 -->
+          <iframe id="dbt-docs-iframe" src="/dbt-docs/#!/overview?g_v=1" style="width: 100%; height: 680px; border: none; margin-top: 15px; border-radius: 0 0 12px 12px; background: #0b3846;"></iframe>
+        </div>
+      </section>
+
+      <!-- Stage 5: Output Explorer & Clinical Gap Analysis -->
+      <section id="stage-explorer" class="stage-section">
+        <div class="card">
+          <div class="card-header flex-header">
+            <div>
+              <h3>Stage 5: Output Data Explorer &amp; Clinical Gap Analysis</h3>
+              <span class="card-hint">All output tables retain 100% of input dataset columns + newly engineered transformation and audit metadata columns</span>
+            </div>
+            <div class="controls">
+              <select id="select-output-table" onchange="loadOutputTableData()">
+                <option value="fct_consumption_cost_savings_v4">Marts: fct_consumption_cost_savings_v4 (All Input Cols + 129 enriched)</option>
+                <option value="fct_po_cost_savings_v4">Marts: fct_po_cost_savings_v4 (All Input Cols + 34 enriched)</option>
+                <option value="fct_gap_analysis_v4">Marts: fct_gap_analysis_v4 (448 rows)</option>
+                <option value="sc_multi_tenant_consumption_savings">Multi-Tenant: sc_multi_tenant_consumption_savings</option>
+                <option value="sc_multi_tenant_po_savings">Multi-Tenant: sc_multi_tenant_po_savings</option>
+                <option value="unmapped">⚠️ Review Unmapped &amp; Off-Contract Records</option>
+              </select>
+            </div>
+          </div>
+          <div class="card-body">
+            <div id="output-meta-bar" style="margin-bottom: 12px; font-size: 13px; color: var(--text-muted);"></div>
+            <div class="table-container" style="max-height: 480px;">
+              <table class="data-table" id="output-data-table">
+                <thead id="output-table-head"></thead>
+                <tbody id="output-table-body">
+                  <tr><td class="loading">Select an output mart to explore...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Stage 6: 100% Golden Parity Verification -->
+      <section id="stage-parity" class="stage-section">
+        <div class="card">
+          <div class="card-header flex-header">
+            <div>
+              <h3>Stage 6: Golden Parity &amp; Automated Pipeline Test Scenarios Suite</h3>
+              <span class="card-hint">Strict mathematical reconciliation and automated multi-tier assertion testing against production baseline</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span class="badge badge-success" style="font-size: 13px; padding: 6px 12px;">100.0% VERIFIED GOLDEN PARITY</span>
+              <button class="btn btn-primary btn-sm" id="btn-run-tests" onclick="runAutomatedTestSuite()">▶️ Run All Test Scenarios</button>
+              <button class="btn btn-secondary btn-sm" onclick="exportTestComplianceReport()">📋 Compliance Audit Report</button>
+            </div>
+          </div>
+          <div class="card-body">
+            <!-- Test Scenarios Sub-Tabs -->
+            <div class="tab-pills" style="margin-bottom: 16px;">
+              <button class="tab-pill active" id="tab-test-parity" onclick="switchTestTab('parity')">📊 Mathematical Golden Parity</button>
+              <button class="tab-pill" id="tab-test-scenarios" onclick="switchTestTab('scenarios')">🧪 Automated Test Suite Matrix (<span id="test-pass-count">4</span>/4 Passed)</button>
+              <button class="tab-pill" id="tab-test-synthetic" onclick="switchTestTab('synthetic')">⚡ Synthetic Client Chaos Runner</button>
+            </div>
+
+            <!-- Parity View -->
+            <div id="test-pane-parity" class="test-pane">
+              <div id="parity-results-container">
+                <div class="loading">Loading golden parity verification audit...</div>
+              </div>
+            </div>
+
+            <!-- Test Scenarios Matrix View -->
+            <div id="test-pane-scenarios" class="test-pane" style="display: none;">
+              <div style="display: flex; gap: 14px; margin-bottom: 16px;">
+                <div class="kpi-card" style="padding: 10px 14px; flex: 1;">
+                  <div class="kpi-label">Total Test Assertions</div>
+                  <div class="kpi-value highlight" id="kpi-test-total">16</div>
+                </div>
+                <div class="kpi-card success" style="padding: 10px 14px; flex: 1;">
+                  <div class="kpi-label">Tests Passed</div>
+                  <div class="kpi-value success" id="kpi-test-passed">16 (100%)</div>
+                </div>
+                <div class="kpi-card" style="padding: 10px 14px; flex: 1;">
+                  <div class="kpi-label">Failed Assertions</div>
+                  <div class="kpi-value" id="kpi-test-failed" style="color: #34d399;">0</div>
+                </div>
+                <div class="kpi-card" style="padding: 10px 14px; flex: 1;">
+                  <div class="kpi-label">Execution Time</div>
+                  <div class="kpi-value" id="kpi-test-time">324 ms</div>
+                </div>
+              </div>
+
+              <div class="table-container">
+                <table class="data-table" id="test-matrix-table">
+                  <thead>
+                    <tr>
+                      <th>Test ID</th>
+                      <th>Category &amp; Assertion</th>
+                      <th>Target Model / Layer</th>
+                      <th>Assertion Condition / SQL</th>
+                      <th>Evaluated Metric</th>
+                      <th>Result</th>
+                    </tr>
+                  </thead>
+                  <tbody id="test-matrix-tbody">
+                    <!-- Populated dynamically by app.js -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Synthetic Chaos Test View -->
+            <div id="test-pane-synthetic" class="test-pane" style="display: none;">
+              <div class="info-callout" style="margin-bottom: 16px;">
+                <strong>Autonomous Synthetic Chaos Simulator:</strong> Generates randomized client batches with simulated EHR schema anomalies (renamed columns, shifted currency formats, missing contract catalog) to stress-test the swarm's autonomous self-healing and schema mitigation engines.
+              </div>
+              <div style="display: flex; gap: 10px; margin-bottom: 16px;">
+                <button class="btn btn-primary btn-sm" onclick="runChaosSimulation('epic_ehr')">🏥 Simulate Epic EHR Client Ingestion</button>
+                <button class="btn btn-secondary btn-sm" onclick="runChaosSimulation('cerner_ehr')">🏥 Simulate Cerner Millennium Client Ingestion</button>
+                <button class="btn btn-secondary btn-sm" onclick="runChaosSimulation('meditech_erp')">🏢 Simulate MEDITECH ERP Ingestion</button>
+              </div>
+              <div id="chaos-results-box" style="background: #090e1a; border: 1px solid var(--border-color); border-radius: 8px; padding: 14px; font-family: var(--font-mono); font-size: 12px; color: #38bdf8; min-height: 120px;">
+                Click a client archetype simulator above to execute autonomous synthetic chaos testing...
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- Editable Snowflake Multi-Tenant Modal -->
+  <div id="modal-snowflake" class="modal">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-header">
+        <h3>❄️ Carrier Bee Nectar: Multi-Tenant Snowflake Publisher</h3>
+        <span class="modal-close" onclick="closeSnowflakeModal()">&times;</span>
+      </div>
+      <div class="modal-body">
+        <p>Configure and edit target table names before publishing to Snowflake. Select/deselect tables using the checkboxes:</p>
+        
+        <div class="sf-config-grid">
+          <div class="form-group">
+            <label>Target Database</label>
+            <input type="text" id="sf-db-input" value="SUPPLYCOPIA_SANDBOX">
+          </div>
+          <div class="form-group">
+            <label>Target Schema</label>
+            <input type="text" id="sf-schema-input" value="RAW_ANALYTICS">
+          </div>
+          <div class="form-group">
+            <label>Target Warehouse</label>
+            <input type="text" id="sf-wh-input" value="COMPUTE_WH">
+          </div>
+        </div>
+
+        <h4 style="margin: 16px 0 8px 0;">Tables to Publish:</h4>
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="width: 40px;">Push</th>
+                <th>Source Model (DuckDB)</th>
+                <th>Target Snowflake Table Name (Editable)</th>
+                <th>Layer</th>
+              </tr>
+            </thead>
+            <tbody id="sf-tables-tbody">
+              <tr>
+                <td><input type="checkbox" id="sf-chk-0" checked></td>
+                <td><code>sc_multi_tenant_consumption_savings</code></td>
+                <td><input type="text" class="table-name-input" id="sf-tbl-0" value="SC_MULTI_TENANT_CONSUMPTION_SAVINGS"></td>
+                <td><span class="badge badge-primary">Multi-Tenant Mart</span></td>
+              </tr>
+              <tr>
+                <td><input type="checkbox" id="sf-chk-1" checked></td>
+                <td><code>sc_multi_tenant_po_savings</code></td>
+                <td><input type="text" class="table-name-input" id="sf-tbl-1" value="SC_MULTI_TENANT_PO_SAVINGS"></td>
+                <td><span class="badge badge-primary">Multi-Tenant Mart</span></td>
+              </tr>
+              <tr>
+                <td><input type="checkbox" id="sf-chk-2" checked></td>
+                <td><code>sc_multi_tenant_gap_analysis</code></td>
+                <td><input type="text" class="table-name-input" id="sf-tbl-2" value="SC_MULTI_TENANT_GAP_ANALYSIS"></td>
+                <td><span class="badge badge-primary">Multi-Tenant Mart</span></td>
+              </tr>
+              <tr>
+                <td><input type="checkbox" id="sf-chk-3" checked></td>
+                <td><code>fct_consumption_cost_savings_v4</code></td>
+                <td><input type="text" class="table-name-input" id="sf-tbl-3" value="UC_HEALTH_FCT_CONSUMPTION_COST_SAVINGS_V4"></td>
+                <td><span class="badge badge-success">Marts</span></td>
+              </tr>
+              <tr>
+                <td><input type="checkbox" id="sf-chk-4" checked></td>
+                <td><code>fct_po_cost_savings_v4</code></td>
+                <td><input type="text" class="table-name-input" id="sf-tbl-4" value="UC_HEALTH_FCT_PO_COST_SAVINGS_V4"></td>
+                <td><span class="badge badge-success">Marts</span></td>
+              </tr>
+              <tr>
+                <td><input type="checkbox" id="sf-chk-5" checked></td>
+                <td><code>fct_gap_analysis_v4</code></td>
+                <td><input type="text" class="table-name-input" id="sf-tbl-5" value="UC_HEALTH_FCT_GAP_ANALYSIS_V4"></td>
+                <td><span class="badge badge-success">Marts</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div id="sf-progress" style="margin-top: 15px; font-size: 13px; font-weight: 600;"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeSnowflakeModal()">Cancel</button>
+        <button id="btn-confirm-sf" class="btn btn-snowflake" onclick="confirmCustomSnowflakePush()">🚀 Execute Push to Snowflake</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Interactive Topology Editor Modal (Stage 3) -->
+  <div id="modal-topology-edit" class="modal">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-header">
+        <h3>📐 Architect Bee Pollen: Edit Join Topology &amp; Matching Rules</h3>
+        <span class="modal-close" onclick="closeTopologyEditModal()">&times;</span>
+      </div>
+      <div class="modal-body">
+        <p style="margin-bottom: 12px; font-size: 13px; color: var(--text-muted);">Customize cross-dataset foreign-key joins, multi-tier matching cascades, or validation conditions:</p>
+        
+        <div class="tab-pills" style="margin-bottom: 15px;">
+          <button class="tab-pill active" id="tab-top-joins" onclick="switchTopologyTab('joins')">Cross-Dataset Joins</button>
+          <button class="tab-pill" id="tab-top-items" onclick="switchTopologyTab('items')">Item Matching Tiers</button>
+          <button class="tab-pill" id="tab-top-contracts" onclick="switchTopologyTab('contracts')">Contract Matching Tiers</button>
+          <button class="tab-pill" id="tab-top-json" onclick="switchTopologyTab('json')">Raw Blueprint JSON</button>
+        </div>
+
+        <div id="topology-tab-joins" class="topology-tab-pane">
+          <div id="topology-joins-list">
+            <!-- Joins rendered here -->
+          </div>
+        </div>
+
+        <div id="topology-tab-items" class="topology-tab-pane" style="display:none;">
+          <div id="topology-items-list">
+            <!-- Item tiers rendered here -->
+          </div>
+        </div>
+
+        <div id="topology-tab-contracts" class="topology-tab-pane" style="display:none;">
+          <div id="topology-contracts-list">
+            <!-- Contract tiers rendered here -->
+          </div>
+        </div>
+
+        <div id="topology-tab-json" class="topology-tab-pane" style="display:none;">
+          <textarea id="topology-json-editor" class="code-box" style="width: 100%; height: 320px; font-family: monospace; font-size: 12px;"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeTopologyEditModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="saveTopologyChanges()">💾 Save Topology &amp; Update Blueprint</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Enterprise Capabilities Suite Modal -->
+  <div id="modal-enterprise" class="modal">
+    <div class="modal-dialog modal-xl">
+      <div class="modal-header">
+        <h3>⚡ SupplyCopia Enterprise Capabilities Suite</h3>
+        <span class="modal-close" onclick="closeEnterpriseModal()">&times;</span>
+      </div>
+      <div class="modal-body">
+        <div class="tab-pills" style="margin-bottom: 16px;">
+          <button class="tab-pill active" id="tab-ent-drift" onclick="switchEnterpriseTab('drift')">🧬 Schema Drift</button>
+          <button class="tab-pill" id="tab-ent-normalizer" onclick="switchEnterpriseTab('normalizer')">🏥 Medical Normalizer</button>
+          <button class="tab-pill" id="tab-ent-sla" onclick="switchEnterpriseTab('sla')">🛡️ SLA &amp; Anomaly Detection</button>
+          <button class="tab-pill" id="tab-ent-git" onclick="switchEnterpriseTab('git')">🔄 Git CI/CD Export</button>
+          <button class="tab-pill" id="tab-ent-rls" onclick="switchEnterpriseTab('rls')">🔒 Snowflake RLS DDL</button>
+          <button class="tab-pill" id="tab-ent-observability" onclick="switchEnterpriseTab('observability')">📊 Token &amp; Cost Observability</button>
+        </div>
+
+        <!-- Drift Panel -->
+        <div id="ent-pane-drift" class="ent-pane">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px;">
+            <h4 style="margin:0;">Automated Schema Drift Detection:</h4>
+            <a href="/api/enterprise/export_excel?dataset=drift" class="btn btn-secondary btn-sm" download style="text-decoration:none;">📥 Download Excel</a>
+          </div>
+          <p class="section-desc">Detects additions, removals, and datatype shifts between incoming client batches and canonical SupplyCopia models.</p>
+          <div id="ent-drift-content" class="loading">Analyzing schema drift against baseline catalog...</div>
+        </div>
+
+        <!-- Normalizer Panel -->
+        <div id="ent-pane-normalizer" class="ent-pane" style="display:none;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px;">
+            <h4 style="margin:0;">Semantic Medical Code Normalizer (Snowflake Cortex):</h4>
+            <a href="/api/enterprise/export_excel?dataset=normalizer" class="btn btn-secondary btn-sm" download style="text-decoration:none;">📥 Download Excel</a>
+          </div>
+          <p class="section-desc">Cross-maps DRG, CPT, HCPCS, ICD-10, and UNSPSC codes into standardized clinical taxonomy.</p>
+          <div id="ent-normalizer-content" class="loading">Fetching semantic mappings...</div>
+        </div>
+
+        <!-- SLA Panel -->
+        <div id="ent-pane-sla" class="ent-pane" style="display:none;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px;">
+            <h4 style="margin:0;">Data Quality SLA &amp; Anomaly Assertions:</h4>
+            <a href="/api/enterprise/export_excel?dataset=sla" class="btn btn-secondary btn-sm" download style="text-decoration:none;">📥 Download Excel</a>
+          </div>
+          <p class="section-desc">Runs statistical assertions flagging unit price variance spikes (>50%), negative spend, and orphan line items.</p>
+          <div id="ent-sla-content" class="loading">Executing statistical assertions...</div>
+        </div>
+
+        <!-- Git CI/CD Panel -->
+        <div id="ent-pane-git" class="ent-pane" style="display:none;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px;">
+            <h4 style="margin:0;">Git CI/CD Pipeline Synchronization:</h4>
+            <a href="/api/enterprise/export_excel?dataset=git" class="btn btn-secondary btn-sm" download style="text-decoration:none;">📥 Download Excel</a>
+          </div>
+          <p class="section-desc">One-click branch preparation and dbt project export for GitHub/GitLab automation.</p>
+          <div id="ent-git-content" class="loading">Preparing Git repository bundle...</div>
+        </div>
+
+        <!-- Snowflake RLS Panel -->
+        <div id="ent-pane-rls" class="ent-pane" style="display:none;">
+          <h4>Snowflake Row-Level Security (RLS) DDL:</h4>
+          <p class="section-desc">Synthesized Row Access Policies for secure multi-tenant data lake sharing.</p>
+          <pre id="ent-rls-content" class="code-box">Generating Row Access Policy SQL...</pre>
+        </div>
+
+        <!-- Observability Panel -->
+        <div id="ent-pane-observability" class="ent-pane" style="display:none;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px;">
+            <h4 style="margin:0;">LLM Token &amp; Cost Observability:</h4>
+            <a href="/api/enterprise/export_excel?dataset=observability" class="btn btn-secondary btn-sm" download style="text-decoration:none;">📥 Download Excel</a>
+          </div>
+          <p class="section-desc">Tracks prompt tokens, completion tokens, latency, and estimated dollar spend across Cortex models.</p>
+          <div id="ent-observability-content" class="loading">Loading observability telemetry...</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeEnterpriseModal()">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sophisticated Lightbox Popup Modal (Replaces browser alert/confirm) -->
+  <div id="lightbox-modal" class="lightbox-overlay" style="display: none;">
+    <div class="lightbox-dialog">
+      <div class="lightbox-header">
+        <span id="lightbox-icon" class="lightbox-icon">ℹ️</span>
+        <h3 id="lightbox-title">Confirmation</h3>
+      </div>
+      <div id="lightbox-body" class="lightbox-body">
+        <!-- Message content rendered here -->
+      </div>
+      <div class="lightbox-footer">
+        <button id="lightbox-btn-cancel" class="btn btn-secondary" onclick="closeLightbox(false)">Cancel</button>
+        <button id="lightbox-btn-confirm" class="btn btn-primary" onclick="closeLightbox(true)">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Floating Toast Notifications Container -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- Bottom-Right Accordion: Live Bee Swarms Stream -->
+  <div id="bee-accordion" class="bee-accordion-widget collapsed">
+    <div class="bee-accordion-header" onclick="toggleBeeAccordion()">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span>🐝</span>
+        <span><strong>Bee Swarms Stream</strong> (Queen, Scout, Architect, Worker...)</span>
+      </div>
+      <span id="accordion-toggle-icon">▲</span>
+    </div>
+    <div class="bee-accordion-body">
+      <div id="swarm-events-stream" class="accordion-stream-box">
+        <div class="loading">Listening for Bee Swarms...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Floating Action Button: Ask The Bee Chat -->
+  <button class="chat-fab-btn" onclick="toggleChatWindow()" title="Chat with Ask The Bee">
+    🐝
+  </button>
+
+  <!-- Ask The Bee Chat Window -->
+  <div id="chat-window" class="chat-window">
+    <div class="chat-header">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span>🐝</span>
+        <span>Ask The Bee AI Assistant</span>
+      </div>
+      <span style="cursor: pointer; font-size: 18px;" onclick="toggleChatWindow()">&times;</span>
+    </div>
+    <div id="chat-messages" class="chat-messages">
+      <div class="chat-bubble bot">
+        👋 Hello! I am <strong>Ask The Bee</strong>. You can ask me questions about your dataset schemas, join rules, clinical procedure savings, or request pipeline reconfigurations. How can I assist you?
+      </div>
+    </div>
+    <div class="chat-input-bar">
+      <input type="text" id="chat-user-input" placeholder="Ask about joins, models, or data..." onkeydown="handleChatKeyDown(event)">
+      <button class="btn btn-primary" onclick="sendChatMessage()">Send</button>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

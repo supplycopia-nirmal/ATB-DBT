@@ -1,0 +1,18 @@
+version: 2
+
+sources:
+  - name: supplycopia_raw
+    schema: main
+    meta:
+      external_location: "read_csv_auto('../Data/{name}.csv', delim='|', all_varchar=True, null_padding=True, ignore_errors=True)"
+    freshness:
+      warn_after: {count: 30, period: day}
+      error_after: {count: 90, period: day}
+    tables:
+      - name: UHC_Consumption
+      - name: UHC_IM_20260930010918
+      - name: UHC_INV_20260930010902
+      - name: UHC_PO_20260930010955
+      - name: UHC_CON_20260930010958
+        meta:
+          external_location: "read_csv_auto('../Data/{name}.csv', delim='|', all_varchar=True, null_padding=True, ignore_errors=True, quote='\"', strict_mode=False)"

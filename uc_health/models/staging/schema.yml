@@ -1,0 +1,119 @@
+version: 2
+
+models:
+  - name: stg_item_master
+    columns:
+      - name: item_id
+        tests:
+          - not_null
+          - unique
+
+  # v4 Staging Models
+  - name: stg_consumption_v4
+    description: "Standardized v4 consumption records with UOM mapping, audit metadata and parsed timestamps"
+    columns:
+      - name: log_id
+        tests:
+          - not_null
+          - unique
+      - name: item_number
+        tests:
+          - not_null
+      - name: admit_date_time
+        tests:
+          - not_null
+      - name: supply_unit_price
+        tests:
+          - not_null
+
+  - name: stg_po_v4
+    description: "Deduplicated purchase orders with line number resolution and audit metadata"
+    columns:
+      - name: po_number
+        tests:
+          - not_null
+      - name: po_line_no
+        tests:
+          - not_null
+      - name: vendor_name
+        tests:
+          - not_null
+      - name: item_id
+        tests:
+          - not_null
+
+  - name: stg_contracts_v4
+    description: "Cleaned contract catalog records ensuring active date windows and pricing tiers"
+    columns:
+      - name: contract_number
+        tests:
+          - not_null
+      - name: item_id
+        tests:
+          - not_null
+      - name: contract_price
+        tests:
+          - not_null
+
+  - name: stg_item_master_v4
+    description: "Canonical item master records deduplicated by item_id"
+    columns:
+      - name: item_id
+        tests:
+          - not_null
+          - unique
+
+  - name: stg_invoice_v4
+    description: "Cleaned accounts payable invoice records linked to PO headers and lines"
+    columns:
+      - name: invoice_number
+        tests:
+          - not_null
+
+  # v4 Intermediate Models
+  - name: int_item_matching_v4
+    description: "4-Tier item master matching in pure SQL"
+    columns:
+      - name: log_id
+        tests:
+          - not_null
+          - unique
+
+  - name: int_contract_matching_v4
+    description: "4-Tier contract matching with date lookback and fallback hierarchy"
+    columns:
+      - name: log_id
+        tests:
+          - not_null
+          - unique
+
+  - name: int_consumption_validated_v4
+    description: "Consumption records enriched with boolean validation flags and row eligibility"
+    columns:
+      - name: log_id
+        tests:
+          - not_null
+          - unique
+      - name: row_eligibility
+        tests:
+          - accepted_values:
+              values: ['ELIGIBLE', 'INELIGIBLE', 'REVIEW_REQUIRED']
+
+  # v4 Marts Models
+  - name: fct_consumption_cost_savings_v4
+    description: "Final consumption cost savings mart with price variance, overpayments, and DRG grouping"
+    columns:
+      - name: log_id
+        tests:
+          - not_null
+          - unique
+
+  - name: fct_po_cost_savings_v4
+    description: "Final purchase order cost savings mart with invoice aggregations and contract compliance"
+
+  - name: fct_gap_analysis_v4
+    description: "Aggregated gap analysis for clinical leadership grouped by procedure, service line, and facility"
+    columns:
+      - name: primary_procedure_group
+        tests:
+          - not_null

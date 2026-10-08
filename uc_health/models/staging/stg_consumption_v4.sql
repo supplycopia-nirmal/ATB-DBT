@@ -1,0 +1,102 @@
+with source as (
+    select * from {{ source('supplycopia_raw', var('consumption_source_file')) }}
+),
+
+uom_mapping as (
+    select * from {{ ref('uom_mappings') }}
+),
+
+parsed as (
+    select
+        LOG_ID as log_id,
+        FACILITY as facility,
+        MEDICAL_RECORD_NUMBER as medical_record_number,
+        "CASE_ID / ENCOUNTER FHIR ID" as case_id,
+        "CASE_ID / ENCOUNTER FHIR ID" as "CASE_ID / ENCOUNTER FHIR ID",
+        DRG_CODE as drg_code,
+        trim(SURGICAL_HIERARCHY) as surgical_hierarchy,
+        trim(SURGICAL_HIERARCHY) as "SURGICAL_HIERARCHY",
+        trim(BILLED_CPT_CODE) as billed_cpt_code,
+        trim(BILLED_CPT_CODE) as "BILLED_CPT_CODE",
+        trim(PRIMARY_ICD10_PX_CODE) as primary_icd10_px_code,
+        trim(PRIMARY_ICD10_PX_CODE) as "PRIMARY_ICD10_PX_CODE",
+        PRIMARY_PROCEDURE as primary_procedure,
+        SERVICE_LINE as service_line,
+        PATIENT_TYPE as patient_type,
+        LEAD_SURGEON as lead_surgeon,
+        trim(PAYOR_GROUP) as payor_group,
+        trim(PAYOR_GROUP) as "PAYOR_GROUP",
+        {{ safe_cast('ADMIT_DATE_TIME', 'timestamp') }} as admit_date_time,
+        {{ safe_cast('DISCHARGE_DATE_TIME', 'timestamp') }} as discharge_date_time,
+        {{ safe_cast('LOS', 'double') }} as length_of_stay,
+        {{ safe_cast('LOS', 'double') }} as "LOS",
+        {{ safe_cast('GMLOS', 'double') }} as gmlos,
+        {{ safe_cast('GMLOS', 'double') }} as "GMLOS",
+        ACCOUNT_NUMBER as account_number,
+        {{ safe_cast('CONTRACT_PRICE', 'double') }} as contract_price,
+        {{ safe_cast('TOTAL_ACQUISITION_COST', 'double') }} as total_acquisition_cost,
+        {{ safe_cast('SUPPLY_UNIT_PRICE', 'double') }} as supply_unit_price,
+        {{ safe_cast('TOTAL_QUANTITY', 'double') }} as total_quantity,
+        {{ safe_cast('IMPLANT_VAR_DIRECT_COST', 'double') }} as implant_var_direct_cost,
+        {{ safe_cast('IMPLANT_VAR_DIRECT_COST', 'double') }} as "IMPLANT_VAR_DIRECT_COST",
+        {{ safe_cast('MED_SUPPLY_VAR_DIRECT_COST', 'double') }} as med_supply_var_direct_cost,
+        {{ safe_cast('MED_SUPPLY_VAR_DIRECT_COST', 'double') }} as "MED_SUPPLY_VAR_DIRECT_COST",
+        {{ safe_cast('TOTAL_CHARGES', 'double') }} as total_charges,
+        {{ safe_cast('TOTAL_ACCT_BAL', 'double') }} as total_acct_bal,
+        {{ safe_cast('TOTAL_ACCT_BAL', 'double') }} as "TOTAL_ACCT_BAL",
+        {{ safe_cast('TOTAL_ADJ', 'double') }} as total_adj,
+        {{ safe_cast('TOTAL_ADJ', 'double') }} as "TOTAL_ADJ",
+        {{ safe_cast('TOTAL_PMTS', 'double') }} as total_pmts,
+        {{ safe_cast('TOTAL_PMTS', 'double') }} as "TOTAL_PMTS",
+        trim("SSI (0/1)") as ssi_flag,
+        trim("SSI (0/1)") as "SSI (0/1)",
+        trim("BLOOD_TRANSFUSION_FLAG (0/1)") as blood_transfusion_flag,
+        trim("BLOOD_TRANSFUSION_FLAG (0/1)") as "BLOOD_TRANSFUSION_FLAG (0/1)",
+        trim("READMISSION_INDEX_CASE (0/1)") as readmission_index_case,
+        trim("READMISSION_INDEX_CASE (0/1)") as "READMISSION_INDEX_CASE (0/1)",
+        trim("MORTALITY (0/1)") as mortality_flag,
+        trim("MORTALITY (0/1)") as "MORTALITY (0/1)",
+        trim("RISK OF MORTALITY") as risk_of_mortality,
+        trim("RISK OF MORTALITY") as "RISK OF MORTALITY",
+        trim(MANUFACTURER_NAME) as manufacturer_name,
+        trim(MANUFACTURER_CATALOG_NUMBER) as manufacturer_catalog_number,
+        trim(ITEM_NUMBER) as item_number,
+        trim(ITEM_DESCRIPTION) as item_description,
+        upper(trim(coalesce(ITEM_UOM, 'EA'))) as raw_item_uom,
+        {{ safe_cast('ITEM_QOE', 'double') }} as item_qoe,
+        {{ safe_cast('ITEM_QOE', 'double') }} as "ITEM_QOE",
+        trim(SUPPLIER) as supplier,
+        trim(CONTRACT_CATEGORY) as contract_category,
+        trim(SPEND_CATEGORY) as spend_category,
+        trim(UNSPSC_CODE) as unspsc_code,
+        trim(CONTRACT_FLAG) as contract_flag,
+        trim(ASA_RATING) as asa_rating,
+        trim(ASA_RATING) as "ASA_RATING",
+        trim(BMI_BUCKET) as bmi_bucket,
+        trim(BMI_BUCKET) as "BMI_BUCKET",
+        trim("ROBOTICS (0/1)") as robotics_flag,
+        trim("ROBOTICS (0/1)") as "ROBOTICS (0/1)",
+        trim(SMOKING_STATUS) as smoking_status,
+        trim(SMOKING_STATUS) as "SMOKING_STATUS",
+        trim("DIABETIC_STATUS (0/1)") as diabetic_status,
+        trim("DIABETIC_STATUS (0/1)") as "DIABETIC_STATUS (0/1)",
+        trim(PATIENT_AGE_BUCKET) as patient_age_bucket,
+        trim(PATIENT_AGE_BUCKET) as "PATIENT_AGE_BUCKET",
+        trim(PATIENT_GENDER) as patient_gender,
+        trim(PATIENT_GENDER) as "PATIENT_GENDER",
+        trim(ETHNICITY) as ethnicity,
+        trim(ETHNICITY) as "ETHNICITY"
+    from source
+),
+
+standardized as (
+    select
+        p.*,
+        coalesce(u.standard_uom, case when p.raw_item_uom in ('EACH', 'EACHES') then 'EA' when p.raw_item_uom in ('CASE', 'CS') then 'CA' when p.raw_item_uom in ('BOX', 'BX') then 'BX' else p.raw_item_uom end) as item_uom,
+        coalesce(u.ea_conversion_factor, 1.0) as uom_conversion_factor,
+        {{ append_metadata('consumption_source_file', ['p.log_id', 'p.item_number', 'p.admit_date_time', 'p.supply_unit_price']) }}
+    from parsed p
+    left join uom_mapping u on p.raw_item_uom = u.uom_code
+)
+
+select * from standardized

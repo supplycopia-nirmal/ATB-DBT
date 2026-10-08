@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UC Health - Data Pipeline Dashboard</title>
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- DataTables CSS -->
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css">
+    <!-- Styles -->
+    <link rel="stylesheet" href="style.css">
+    <!-- jQuery and DataTables JS -->
+    <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Marked.js -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+    <div class="background-animation"></div>
+    
+    <div class="container">
+        <header class="glass-panel">
+            <div class="logo">
+                <img src="SC_Logo.png" alt="SupplyCopia Logo" style="height: 40px;">
+                <h1>UC Health</h1>
+                <span class="badge">Pipeline Profiler</span>
+            </div>
+            <p>Data Architecture & Transformations Overview</p>
+            
+            <div class="header-actions" style="display: flex; gap: 10px;">
+                <button class="info-modal-btn btn-download fade-in delay-1" style="background: rgba(230, 69, 82, 0.1); color: var(--accent-color); border: 1px solid rgba(230, 69, 82, 0.3);">
+                    <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    Data Dictionary
+                </button>
+                <a href="/api/download?table=transformed" class="btn-download fade-in delay-1">
+                    <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                    Download Transformed Dataset
+                </a>
+            </div>
+        </header>
+
+        <main>
+            <!-- Main Navigation Tabs -->
+            <div class="main-tabs" style="display: flex; gap: 15px; margin-bottom: 25px; border-bottom: 1px solid rgba(0,0,0,0.1); padding-bottom: 15px;">
+                <button class="main-tab-btn active" data-target="view-pipeline">
+                    <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="vertical-align: text-bottom; margin-right: 5px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                    Data Pipeline & Profiling
+                </button>
+                <button class="main-tab-btn" data-target="view-savings">
+                    <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="vertical-align: text-bottom; margin-right: 5px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    Cost Savings Analysis
+                </button>
+            </div>
+
+            <!-- View: Data Pipeline & Profiling -->
+            <div id="view-pipeline" class="main-view active">
+                
+                <!-- Data Quality Metrics -->
+                <section class="metrics-grid" style="grid-template-columns: repeat(3, 1fr);">
+                    <div class="metric-card glass-panel fade-in delay-2">
+                        <h3>Avg Data Quality</h3>
+                        <div class="value" id="metric-dq">0 / 100</div>
+                        <div class="subtext">Item Master Completeness</div>
+                    </div>
+                    <div class="metric-card glass-panel fade-in delay-3" id="missing-vendors-card" style="cursor: pointer;" title="Click to view datasets with missing vendors">
+                        <h3>Missing Vendors</h3>
+                        <div class="value error" id="metric-missing-vendors">0</div>
+                        <div class="subtext">Click to view items</div>
+                    </div>
+                    <div class="metric-card glass-panel fade-in delay-4">
+                        <h3>Total Contracts</h3>
+                        <div class="value" id="metric-contracts">0</div>
+                        <div class="subtext">Active & Inactive</div>
+                    </div>
+                </section>
+
+                <section class="metrics-grid" style="margin-top: 20px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
+                    <div class="metric-card glass-panel fade-in delay-2" id="health-card-cons" style="cursor: pointer;">
+                        <h3>Consumption Log Availability</h3>
+                        <div class="value" id="health-cons-dates" style="font-size: 1.2rem;">Loading...</div>
+                        <div class="subtext" id="health-cons-gaps">Checking gaps...</div>
+                    </div>
+                    <div class="metric-card glass-panel fade-in delay-3" id="health-card-po" style="cursor: pointer;">
+                        <h3>Purchase Orders Availability</h3>
+                        <div class="value" id="health-po-dates" style="font-size: 1.2rem;">Loading...</div>
+                        <div class="subtext" id="health-po-gaps">Checking gaps...</div>
+                    </div>
+                    <div class="metric-card glass-panel fade-in delay-4" id="health-card-inv" style="cursor: pointer;">
+                        <h3>Invoices Availability</h3>
+                        <div class="value" id="health-inv-dates" style="font-size: 1.2rem;">Loading...</div>
+                        <div class="subtext" id="health-inv-gaps">Checking gaps...</div>
+                    </div>
+                    <div class="metric-card glass-panel fade-in delay-5" id="health-card-con" style="cursor: pointer;">
+                        <h3>Contracts Availability</h3>
+                        <div class="value" id="health-con-dates" style="font-size: 1.2rem;">Loading...</div>
+                        <div class="subtext" id="health-con-gaps">Checking gaps...</div>
+                    </div>
+                </section>
+
+                <div style="display: flex; gap: 20px; margin-top: 20px; margin-bottom: 20px;">
+                    <!-- Raw Data Explorer -->
+                    <section class="data-explorer glass-panel fade-in delay-6" style="flex: 2; min-width: 0;">
+                        <div class="section-header">
+                            <h2>Raw Data Explorer</h2>
+                            <p class="section-desc">Live connection to DuckDB showcasing millions of ingested rows.</p>
+                        </div>
+        
+                        
+                        <div class="raw-data-grid" style="margin-bottom: 15px;">
+                            <div class="raw-stat" style="display: flex; flex-direction: column;">
+                                <span class="label">Consumption Logs</span>
+                                <div><span class="value" id="raw-consumption">0</span> <span style="font-size:0.8rem; color:var(--text-muted);">Rows</span></div>
+                                <div><span class="value" id="raw-consumption-val" style="color:var(--accent-color); font-size:1.1rem;">$0</span> <span style="font-size:0.8rem; color:var(--text-muted);">Spend</span></div>
+                            </div>
+                            <div class="raw-stat" style="display: flex; flex-direction: column;">
+                                <span class="label">Purchase Orders</span>
+                                <div><span class="value" id="raw-po">0</span> <span style="font-size:0.8rem; color:var(--text-muted);">Rows</span></div>
+                                <div><span class="value" id="raw-po-val" style="color:var(--accent-color); font-size:1.1rem;">$0</span> <span style="font-size:0.8rem; color:var(--text-muted);">Spend</span></div>
+                            </div>
+                            <div class="raw-stat">
+                                <span class="label">Invoices</span>
+                                <span class="value" id="raw-invoices">0</span>
+                            </div>
+                            <div class="raw-stat">
+                                <span class="label">Item Master</span>
+                                <span class="value" id="raw-item">0</span>
+                            </div>
+                            <div class="raw-stat">
+                                <span class="label">Contracts</span>
+                                <span class="value" id="raw-contracts">0</span>
+                            </div>
+                        </div>
+
+                        
+                        
+                        <div class="tabs" style="align-items: center; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 10px; margin-bottom: 15px; display: flex; flex-wrap: wrap; gap: 10px;">
+                            <button class="tab-btn active" data-target="table-consumption">Consumption</button>
+                            <button class="tab-btn" data-target="table-po">Purchase Orders</button>
+                            <button class="tab-btn" data-target="table-invoices">Invoices</button>
+                            <button class="tab-btn" data-target="table-items">Item Master</button>
+                            <button class="tab-btn" data-target="table-contracts">Contracts</button>
+                            
+                            <div style="flex-grow: 1;"></div>
+                            
+                            <select id="cons-filter" style="display: block; background: rgba(0,0,0,0.2); color: white; border: 1px solid rgba(255,255,255,0.2); padding: 5px; border-radius: 4px;">
+                                <option value="">All Facilities (Cons)</option>
+                            </select>
+                            
+                            <select id="po-filter" style="display: none; background: rgba(0,0,0,0.2); color: white; border: 1px solid rgba(255,255,255,0.2); padding: 5px; border-radius: 4px;">
+                                <option value="">All Facilities (PO)</option>
+                            </select>
+
+                            <a id="raw-download-btn" href="/api/download?table=consumption" class="btn-download" style="font-size: 0.8rem; padding: 0.3rem 0.6rem;">
+                                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                                Download Tab Data
+                            </a>
+                        </div>
+
+                            <a id="raw-download-btn" href="/api/download?table=consumption" class="btn-download" style="font-size: 0.8rem; padding: 0.3rem 0.6rem;">
+                                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                                Download Tab Data
+                            </a>
+                        </div>
+        
+                        <div class="table-container tab-content active" id="table-consumption">
+                            <table id="raw-consumption-table" class="display nowrap" style="width:100%"></table>
+                        </div>
+                        <div class="table-container tab-content" id="table-po">
+                            <table id="raw-po-table" class="display nowrap" style="width:100%"></table>
+                        </div>
+                        <div class="table-container tab-content" id="table-invoices">
+                            <table id="raw-invoices-table" class="display nowrap" style="width:100%"></table>
+                        </div>
+                        <div class="table-container tab-content" id="table-items">
+                            <table id="raw-items-table" class="display nowrap" style="width:100%"></table>
+                        </div>
+                        <div class="table-container tab-content" id="table-contracts">
+                            <table id="raw-contracts-table" class="display nowrap" style="width:100%"></table>
+                        </div>
+                    </section>
+
+                    <!-- DBT Transformations / Data Dictionary Info Panel -->
+                    <section class="glass-panel fade-in delay-5" style="flex: 1; display: flex; flex-direction: column; min-width: 0;">
+                        <h2 style="margin-bottom: 15px;">DBT Transformations</h2>
+                        
+                        <div style="background: rgba(0, 0, 0, 0.03); padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 3px solid var(--text-secondary);">
+                            <h4 style="color: var(--text-primary); margin-bottom: 5px;">General Data Cleaning</h4>
+                            <p style="font-size: 0.9rem; color: var(--text-secondary); margin: 0;">
+                                Added missing columns to jagged CSVs. Cast messy string prices and dates into strongly typed numeric and timestamp columns using duckdb casting logic.
+                            </p>
+                        </div>
+                        
+                        <div style="background: rgba(0, 0, 0, 0.03); padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 3px solid var(--accent-color);">
+                            <h4 style="color: var(--accent-color); margin-bottom: 5px;">Consumption Mapping</h4>
+                            <p style="font-size: 0.9rem; color: var(--text-secondary); margin: 0;">
+                                We used <strong>GPT-5.6-Luna</strong> to resolve ambiguous arrays of DRG Codes. Generated columns: <br>
+                                <span style="color: var(--text-primary); font-family: monospace;">primary_drg_code</span> and <span style="color: var(--text-primary); font-family: monospace;">primary_procedure_group</span>
+                            </p>
+                        </div>
+
+                        <div style="background: rgba(0, 0, 0, 0.03); padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 3px solid var(--accent-color);">
+                            <h4 style="color: var(--accent-color); margin-bottom: 5px;">Item Master Profiling</h4>
+                            <p style="font-size: 0.9rem; color: var(--text-secondary); margin: 0;">
+                                Calculated <span style="color: var(--text-primary); font-family: monospace;">data_quality_score</span>. Flagged missing values with <span style="color: var(--text-primary); font-family: monospace;">is_missing_vendor_code</span> and used Python NLP to impute missing categories into <span style="color: var(--text-primary); font-family: monospace;">custom_category</span>.
+                            </p>
+                        </div>
+
+                        <div style="background: rgba(0, 0, 0, 0.03); padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 3px solid #10b981;">
+                            <h4 style="color: #10b981; margin-bottom: 5px;">✨ V4 Enterprise Architecture Models</h4>
+                            <p style="font-size: 0.9rem; color: var(--text-secondary); margin: 0;">
+                                Multi-tier deterministic item & contract matching, 3-way invoice reconciliation, surrogate row_id tracking, and clinical gap analysis rolled up to Snowflake warehouse.
+                            </p>
+                        </div>
+                        
+                        <div style="margin-top: auto; padding-top: 15px; text-align: center;">
+                            <button class="info-modal-btn btn-download" style="width: 100%; justify-content: center; background: rgba(255,255,255,0.05);">
+                                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                Full Data Dictionary
+                            </button>
+                        </div>
+                    </section>
+                </div>
+
+                <!-- DBT Lineage Graph -->
+                <section class="glass-panel fade-in delay-7" style="margin-top: 20px; padding: 0; overflow: hidden;">
+                    <div class="section-header" style="padding: 20px 20px 0 20px;">
+                        <h2>DBT Visual Lineage</h2>
+                        <p class="section-desc">Interactive Directed Acyclic Graph (DAG) demonstrating data provenance and pipeline models.</p>
+                    </div>
+                    <iframe src="/dbt-docs/#!/overview?g_v=1" style="width: 100%; height: 600px; border: none; margin-top: 15px; border-radius: 0 0 12px 12px;"></iframe>
+                </section>
+            </div>
+
+            <!-- View: Cost Savings Analysis -->
+            <div id="view-savings" class="main-view" style="display: none;">
+                
+                <!-- Financial Metrics -->
+                <section class="metrics-grid">
+                    <div class="metric-card glass-panel fade-in">
+                        <h3>Total Identified Savings</h3>
+                        <div class="value highlight" id="metric-savings">$0</div>
+                        <div class="subtext">From Price Variance</div>
+                    </div>
+                    <div class="metric-card glass-panel fade-in delay-1">
+                        <h3>Off-Contract Spend</h3>
+                        <div class="value warning" id="metric-off-contract">$0</div>
+                        <div class="subtext">Requires Review</div>
+                    </div>
+                </section>
+                
+                
+                <!-- V2 Financial Metrics -->
+                <h3 style="margin-top: 30px; margin-bottom: 15px; color: var(--text-color);">V2 Cost Savings (Pre-processed Datasets)</h3>
+                <section class="metrics-grid">
+                    <div class="metric-card glass-panel fade-in delay-2">
+                        <h3>PO Cost Savings Analysis V2</h3>
+                        <div class="value highlight" id="metric-savings-po-v2">$0</div>
+                        <div class="subtext">From PO Price Variance</div>
+                    </div>
+                    <div class="metric-card glass-panel fade-in delay-3">
+                        <h3>Consumption Cost Savings Analysis V2</h3>
+                        <div class="value highlight" id="metric-savings-cons-v2">$0</div>
+                        <div class="subtext">From Consumption Price Variance</div>
+                    </div>
+                </section>
+                
+                <!-- V3 Financial Metrics -->
+                <h3 style="margin-top: 30px; margin-bottom: 15px; color: var(--text-color);">V3 Cost Savings (DBT Dynamic Pipeline)</h3>
+                <section class="metrics-grid">
+                    <div class="metric-card glass-panel fade-in delay-2">
+                        <h3>PO Cost Savings Analysis V3</h3>
+                        <div class="value highlight" id="metric-savings-po-v3">$0</div>
+                        <div class="subtext">From PO Price Variance</div>
+                    </div>
+                    <div class="metric-card glass-panel fade-in delay-3">
+                        <h3>Consumption Cost Savings Analysis V3</h3>
+                        <div class="value highlight" id="metric-savings-cons-v3">$0</div>
+                        <div class="subtext">From Consumption Price Variance</div>
+                    </div>
+                </section>
+
+                <!-- V4 Financial Metrics -->
+                <h3 style="margin-top: 30px; margin-bottom: 15px; color: var(--accent-color);">✨ V4 Cost Savings (Enterprise Multi-Tier Architecture)</h3>
+                <section class="metrics-grid">
+                    <div class="metric-card glass-panel fade-in delay-2" style="border-left: 4px solid var(--accent-color);">
+                        <h3>PO Cost Savings V4</h3>
+                        <div class="value highlight" id="metric-savings-po-v4">$0</div>
+                        <div class="subtext">From PO Price Variance (v4)</div>
+                    </div>
+                    <div class="metric-card glass-panel fade-in delay-3" style="border-left: 4px solid var(--accent-color);">
+                        <h3>Consumption Cost Savings V4</h3>
+                        <div class="value highlight" id="metric-savings-cons-v4">$0</div>
+                        <div class="subtext">From Consumption Price Variance (v4)</div>
+                    </div>
+                    <div class="metric-card glass-panel fade-in delay-4" style="border-left: 4px solid #10b981;">
+                        <h3>Total Cons Savings Opportunity V4</h3>
+                        <div class="value highlight" id="metric-opp-cons-v4" style="color: #10b981;">$0</div>
+                        <div class="subtext">Contract + 15% Benchmark Off-Contract</div>
+                    </div>
+                </section>
+
+                
+                <!-- Charts Row -->
+                <section class="charts-grid" style="margin-top: 20px; grid-template-columns: repeat(3, 1fr);">
+                    <div class="chart-card glass-panel fade-in delay-4">
+                        <h2>Savings by Manufacturer</h2>
+                        <div class="chart-container" style="height: 250px;">
+                            <canvas id="mfrSavingsChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="chart-card glass-panel fade-in delay-5">
+                        <h2>Savings by Vendor</h2>
+                        <div class="chart-container" style="height: 250px;">
+                            <canvas id="vendorSavingsChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="chart-card glass-panel fade-in delay-6">
+                        <h2>Savings by Procedure</h2>
+                        <div class="chart-container" style="height: 250px;">
+                            <canvas id="procedureSavingsChart"></canvas>
+                        </div>
+                    </div>
+                </section>
+                
+                <!-- Ask The Bee Insights -->
+                <section class="glass-panel fade-in delay-7" style="margin-top: 20px; border-left: 4px solid var(--warning-color);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                        <div>
+                            <h2 style="margin: 0; display: flex; align-items: center; gap: 10px;">
+                                <svg width="24" height="24" fill="none" stroke="var(--warning-color)" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path></svg>
+                                Ask The Bee Insights
+                            </h2>
+                            
+                        </div>
+                        <button id="generate-insights-btn" class="btn-download" style="background: rgba(245, 158, 11, 0.2); border: 1px solid rgba(245, 158, 11, 0.5); color: var(--warning-color); font-weight: 600;">
+                            Generate Insights
+                        </button>
+                    </div>
+                    <div id="insights-content" style="padding: 15px; background: rgba(0,0,0,0.03); border-radius: 8px; min-height: 100px; font-size: 0.95rem; line-height: 1.6; color: var(--text-primary); display: none;">
+                        <!-- Markdown content injected here -->
+                    </div>
+                </section>
+
+                <!-- Full Cost Savings Table -->
+                <section class="data-explorer glass-panel fade-in delay-5" style="margin-top: 20px;">
+                    <div class="section-header" style="justify-content: space-between;">
+                        <div>
+                            <h2>Cost Savings Analysis V1 <i class="fas fa-info-circle savings-info-icon" style="cursor: pointer; font-size: 0.6em; color: var(--accent-color); margin-left: 8px; vertical-align: middle;"></i></h2>
+                            <p class="section-desc">Final output containing 100+ fully joined and transformed columns. Only displaying records where potential savings were identified (Price Variance > 0). Use global search to filter.</p>
+                        </div>
+                        <a href="/api/download?table=transformed" class="btn-download fade-in delay-1" style="background: rgba(52, 211, 153, 0.2); color: #34d399; border: 1px solid rgba(52, 211, 153, 0.3);">
+                            <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                            Export Full Dataset
+                        </a>
+                    </div>
+                    <div class="table-container" style="margin-top: 15px;">
+                        <!-- Using display nowrap so large number of columns don't wrap and look messy, horizontal scroll is better -->
+                        <table id="transformed-table" class="display nowrap" style="width:100%">
+                            <!-- Populated via JS -->
+                        </table>
+                    </div>
+                </section>
+
+                
+                <!-- PO Cost Savings Table V2 -->
+                <section class="data-explorer glass-panel fade-in delay-5" style="margin-top: 20px;">
+                    <div class="section-header" style="justify-content: space-between;">
+                        <div>
+                            <h2>PO Cost Savings Analysis V2 <i class="fas fa-info-circle savings-info-icon" style="cursor: pointer; font-size: 0.6em; color: var(--accent-color); margin-left: 8px; vertical-align: middle;"></i></h2>
+                            <p class="section-desc">Cost savings analysis based purely on the PO dataset.</p>
+                        </div>
+                        <a href="/api/download?table=po_cost_savings_v2" class="btn-download fade-in delay-1" style="background: rgba(52, 211, 153, 0.2); color: #34d399; border: 1px solid rgba(52, 211, 153, 0.3);">
+                            <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                            Export PO V2 Dataset
+                        </a>
+                    </div>
+                    <div class="table-container" style="margin-top: 15px;">
+                        <table id="po-v2-table" class="display nowrap" style="width:100%">
+                            <!-- Populated via JS -->
+                        </table>
+                    </div>
+                </section>
+
+                <!-- Cons Cost Savings Table V2 -->
+                <section class="data-explorer glass-panel fade-in delay-5" style="margin-top: 20px;">
+                    <div class="section-header" style="justify-content: space-between;">
+                        <div>
+                            <h2>Consumption Cost Savings Analysis V2 <i class="fas fa-info-circle savings-info-icon" style="cursor: pointer; font-size: 0.6em; color: var(--accent-color); margin-left: 8px; vertical-align: middle;"></i></h2>
+                            <p class="section-desc">Cost savings analysis based purely on the Consumption dataset.</p>
+                        </div>
+                        <a href="/api/download?table=cons_cost_savings_v2" class="btn-download fade-in delay-1" style="background: rgba(52, 211, 153, 0.2); color: #34d399; border: 1px solid rgba(52, 211, 153, 0.3);">
+                            <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                            Export Cons V2 Dataset
+                        </a>
+                    </div>
+                    <div class="table-container" style="margin-top: 15px;">
+                        <table id="cons-v2-table" class="display nowrap" style="width:100%">
+                            <!-- Populated via JS -->
+                        </table>
+                    </div>
+                </section>
+
+                <!-- PO Cost Savings Table V3 -->
+                <section class="data-explorer glass-panel fade-in delay-5" style="margin-top: 20px;">
+                    <div class="section-header" style="justify-content: space-between;">
+                        <div>
+                            <h2>PO Cost Savings Analysis V3 <i class="fas fa-info-circle savings-info-icon" style="cursor: pointer; font-size: 0.6em; color: var(--accent-color); margin-left: 8px; vertical-align: middle;"></i></h2>
+                            <p class="section-desc">Cost savings analysis based purely on the PO dataset.</p>
+                        </div>
+                        <a href="/api/download?table=po_cost_savings_v3" class="btn-download fade-in delay-1" style="background: rgba(52, 211, 153, 0.2); color: #34d399; border: 1px solid rgba(52, 211, 153, 0.3);">
+                            <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                            Export PO V3 Dataset
+                        </a>
+                    </div>
+                    <div class="table-container" style="margin-top: 15px;">
+                        <table id="po-v3-table" class="display nowrap" style="width:100%">
+                            <!-- Populated via JS -->
+                        </table>
+                    </div>
+                </section>
+
+                <!-- Cons Cost Savings Table V3 -->
+                <section class="data-explorer glass-panel fade-in delay-5" style="margin-top: 20px;">
+                    <div class="section-header" style="justify-content: space-between;">
+                        <div>
+                            <h2>Consumption Cost Savings Analysis V3 <i class="fas fa-info-circle savings-info-icon" style="cursor: pointer; font-size: 0.6em; color: var(--accent-color); margin-left: 8px; vertical-align: middle;"></i></h2>
+                            <p class="section-desc">Cost savings analysis based purely on the Consumption dataset.</p>
+                        </div>
+                        <a href="/api/download?table=cons_cost_savings_v3" class="btn-download fade-in delay-1" style="background: rgba(52, 211, 153, 0.2); color: #34d399; border: 1px solid rgba(52, 211, 153, 0.3);">
+                            <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                            Export Cons V3 Dataset
+                        </a>
+                    </div>
+                    <div class="table-container" style="margin-top: 15px;">
+                        <table id="cons-v3-table" class="display nowrap" style="width:100%">
+                            <!-- Populated via JS -->
+                        </table>
+                    </div>
+                </section>
+
+                <!-- Missing PO Rows Table V3 -->
+                <section class="data-explorer glass-panel fade-in delay-5" style="margin-top: 30px;">
+                    <div class="section-header" style="justify-content: space-between;">
+                        <div>
+                            <h2>Missing PO Rows (V3 Evaluation)</h2>
+                            <p class="section-desc">Rows dropped from the raw PO dataset during the V3 pipeline.</p>
+                        </div>
+                        <a href="/api/download?table=missing_po_v3" class="btn-download fade-in delay-1" style="background: rgba(239, 68, 68, 0.2); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3);">
+                            <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                            Export Missing PO Rows
+                        </a>
+                    </div>
+                    <div class="table-container" style="margin-top: 15px;">
+                        <table id="missing-po-v3-table" class="display nowrap" style="width:100%">
+                            <!-- Populated via JS -->
+                        </table>
+                    </div>
+                </section>
+
+                <!-- Missing Consumption Rows Table V3 -->
+                <section class="data-explorer glass-panel fade-in delay-5" style="margin-top: 20px;">
+                    <div class="section-header" style="justify-content: space-between;">
+                        <div>
+                            <h2>Missing Consumption Rows (V3 Evaluation)</h2>
+                            <p class="section-desc">Rows dropped from the raw Consumption dataset during the V3 pipeline.</p>
+                        </div>
+                        <a href="/api/download?table=missing_cons_v3" class="btn-download fade-in delay-1" style="background: rgba(239, 68, 68, 0.2); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3);">
+                            <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                            Export Missing Cons Rows
+                        </a>
+                    </div>
+                    <div class="table-container" style="margin-top: 15px;">
+                        <table id="missing-cons-v3-table" class="display nowrap" style="width:100%">
+                            <!-- Populated via JS -->
+                        </table>
+                    </div>
+                </section>
+
+
+
+                <!-- PO Cost Savings Table V4 -->
+                <section class="data-explorer glass-panel fade-in delay-5" style="margin-top: 30px; border-top: 3px solid var(--accent-color);">
+                    <div class="section-header" style="justify-content: space-between;">
+                        <div>
+                            <h2>PO Cost Savings Analysis V4 <i class="fas fa-info-circle savings-info-icon" style="cursor: pointer; font-size: 0.6em; color: var(--accent-color); margin-left: 8px; vertical-align: middle;"></i></h2>
+                            <p class="section-desc">Enterprise v4 model with multi-tier item & contract matching, data quality scores, and 3-way invoice reconciliation aggregation.</p>
+                        </div>
+                        <a href="/api/download?table=po_cost_savings_v4" class="btn-download fade-in delay-1" style="background: rgba(99, 102, 241, 0.2); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3);">
+                            <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                            Export PO V4 Dataset
+                        </a>
+                    </div>
+                    <div class="table-container" style="margin-top: 15px;">
+                        <table id="po-v4-table" class="display nowrap" style="width:100%">
+                            <!-- Populated via JS -->
+                        </table>
+                    </div>
+                </section>
+
+                <!-- Cons Cost Savings Table V4 -->
+                <section class="data-explorer glass-panel fade-in delay-5" style="margin-top: 20px; border-top: 3px solid var(--accent-color);">
+                    <div class="section-header" style="justify-content: space-between;">
+                        <div>
+                            <h2>Consumption Cost Savings Analysis V4 <i class="fas fa-info-circle savings-info-icon" style="cursor: pointer; font-size: 0.6em; color: var(--accent-color); margin-left: 8px; vertical-align: middle;"></i></h2>
+                            <p class="section-desc">Enterprise v4 model with 4-tier contract matching, surrogate row_id tracking, DRG grouping, and off-contract opportunity benchmarking.</p>
+                        </div>
+                        <a href="/api/download?table=cons_cost_savings_v4" class="btn-download fade-in delay-1" style="background: rgba(99, 102, 241, 0.2); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3);">
+                            <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                            Export Cons V4 Dataset
+                        </a>
+                    </div>
+                    <div class="table-container" style="margin-top: 15px;">
+                        <table id="cons-v4-table" class="display nowrap" style="width:100%">
+                            <!-- Populated via JS -->
+                        </table>
+                    </div>
+                </section>
+
+                <!-- Gap Analysis Table V4 -->
+                <section class="data-explorer glass-panel fade-in delay-5" style="margin-top: 20px; border-top: 3px solid #10b981;">
+                    <div class="section-header" style="justify-content: space-between;">
+                        <div>
+                            <h2>Clinical Gap Analysis V4 <i class="fas fa-info-circle savings-info-icon" style="cursor: pointer; font-size: 0.6em; color: #10b981; margin-left: 8px; vertical-align: middle;"></i></h2>
+                            <p class="section-desc">Aggregated contract compliance and savings opportunity rolled up by clinical service line, procedure group, facility, and patient type.</p>
+                        </div>
+                        <a href="/api/download?table=gap_analysis_v4" class="btn-download fade-in delay-1" style="background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3);">
+                            <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                            Export Gap Analysis V4
+                        </a>
+                    </div>
+                    <div class="table-container" style="margin-top: 15px;">
+                        <table id="gap-v4-table" class="display nowrap" style="width:100%">
+                            <!-- Populated via JS -->
+                        </table>
+                    </div>
+                </section>
+
+            </div>
+        </main>
+    </div>
+
+    <script src="app.js?v=3"></script>
+
+    <!-- Data Dictionary Modal -->
+    <div id="info-modal" class="modal" style="display: none; position: fixed; z-index: 9999; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0, 0, 0, 0.7);">
+        <div class="modal-content glass-panel" style="margin: 10% auto; padding: 30px; width: 80%; max-width: 800px; border-radius: 12px; position: relative;">
+            <span class="close-modal" style="color: var(--text-secondary); float: right; font-size: 28px; font-weight: bold; cursor: pointer;">&times;</span>
+            <h2 style="color: var(--text-primary); margin-bottom: 20px; font-family: 'Outfit', sans-serif;">Dataset Transformations & Data Dictionary</h2>
+            
+            <h3 style="color: var(--text-primary); margin-top: 20px;">1. How the Transformed Dataset is Generated</h3>
+            <p style="color: var(--text-secondary); line-height: 1.6; margin-bottom: 15px;">
+                The final Transformed Dataset (<strong>fct_cost_savings_analysis</strong>) integrates all 4 raw data sources (Consumption, Item Master, Purchase Orders, Invoices). It computes accurate cost savings by joining on items and tracing the full lineage of a product from its contract price through to consumption.
+                All original source columns are preserved, and new columns are added to enrich the data for analytics.
+            </p>
+            
+            <h3 style="color: var(--text-primary); margin-top: 20px;">2. AI-Powered DRG Mapping (Consumption)</h3>
+            <p style="color: var(--text-secondary); line-height: 1.6; margin-bottom: 15px;">
+                We used <strong>GPT-5.6-Luna</strong> to resolve ambiguous DRG Codes in the consumption data.
+                <br>✨ <strong style="color: var(--accent-color);">primary_drg_code</strong>: Extracted single correct DRG code based on the procedure.
+                <br>✨ <strong style="color: var(--accent-color);">primary_procedure_group</strong>: LLM-classified procedure category (e.g. Cardiovascular).
+            </p>
+
+            <h3 style="color: var(--text-primary); margin-top: 20px;">3. Item Master Data Quality</h3>
+            <p style="color: var(--text-secondary); line-height: 1.6; margin-bottom: 15px;">
+                <br>✨ <strong style="color: var(--accent-color);">is_missing_vendor_code</strong> / <strong style="color: var(--accent-color);">is_missing_mfr_name</strong>: Flags for missing critical identifiers.
+                <br>✨ <strong style="color: var(--accent-color);">custom_category</strong>: Fallback categorization logic for unclassified items.
+                <br>✨ <strong style="color: var(--accent-color);">data_quality_score</strong>: A 0-100 score indicating the completeness of the item profile.
+            </p>
+
+        </div>
+    </div>
+    
+    <!-- Missing Vendors Modal -->
+    <div id="missing-vendors-modal" class="modal" style="display: none; position: fixed; z-index: 9999; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0, 0, 0, 0.7);">
+        <div class="modal-content glass-panel" style="margin: 5% auto; padding: 30px; width: 95%; max-width: 1200px; border-radius: 12px; position: relative;">
+            <span class="close-missing-vendors" style="color: var(--text-secondary); float: right; font-size: 28px; font-weight: bold; cursor: pointer;">&times;</span>
+            <h2 style="color: var(--text-primary); margin-bottom: 20px; font-family: 'Outfit', sans-serif;">Datasets Missing Vendor Information</h2>
+            <p style="color: var(--text-secondary); line-height: 1.6; margin-bottom: 15px;">
+                The following items from the Item Master are missing their Vendor Code or Manufacturer Name.
+            </p>
+            <div class="table-container" style="background: rgba(0, 0, 0, 0.05); padding: 15px; border-radius: 8px;">
+                <table id="missing-vendors-table" class="display nowrap" style="width:100%"></table>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Volume Trend Modal -->
+    <div id="volume-trend-modal" class="modal" style="display: none; position: fixed; z-index: 9999; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0, 0, 0, 0.7);">
+        <div class="modal-content glass-panel" style="margin: 10% auto; padding: 30px; width: 80%; max-width: 800px; border-radius: 12px; position: relative;">
+            <span class="close-volume-trend" style="color: var(--text-secondary); float: right; font-size: 28px; font-weight: bold; cursor: pointer;">&times;</span>
+            <h2 id="volume-trend-title">Data Volume Trend</h2>
+            <div id="volume-trend-loading" style="display: none; text-align: center; margin: 20px;">
+                <div class="loader"></div>
+                <p>Loading trend data...</p>
+            </div>
+            <div style="position: relative; height:400px; width:100%">
+                <canvas id="volumeTrendChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Modal Logic
+        const modal = document.getElementById("info-modal");
+        const infoBtns = document.querySelectorAll(".info-modal-btn");
+        const span = document.getElementsByClassName("close-modal")[0];
+
+        infoBtns.forEach(btn => {
+            btn.onclick = function() { modal.style.display = "block"; }
+        });
+        span.onclick = function() { modal.style.display = "none"; }
+        
+        // Missing Vendors Modal Logic
+        const mvModal = document.getElementById("missing-vendors-modal");
+        const mvBtn = document.getElementById("missing-vendors-card");
+        const mvSpan = document.getElementsByClassName("close-missing-vendors")[0];
+
+        if (mvBtn) {
+            mvBtn.onclick = function() { mvModal.style.display = "block"; }
+        }
+        mvSpan.onclick = function() { mvModal.style.display = "none"; }
+        
+        const vtModal = document.getElementById("volume-trend-modal");
+        const vtSpan = document.getElementsByClassName("close-volume-trend")[0];
+        
+        if (vtSpan) {
+            vtSpan.onclick = function() { vtModal.style.display = "none"; }
+        }
+
+        window.onclick = function(event) {
+            if (event.target == modal) { modal.style.display = "none"; }
+            if (event.target == mvModal) { mvModal.style.display = "none"; }
+            if (event.target == vtModal) { vtModal.style.display = "none"; }
+        }
+    </script>
+
+    <!-- Math Modal -->
+    <div id="savings-math-modal" class="modal" style="display: none; position: fixed; z-index: 9999; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0, 0, 0, 0.7);">
+        <div class="modal-content glass-panel" style="margin: 10% auto; padding: 30px; width: 80%; max-width: 600px; border-radius: 12px; position: relative; text-align: left; color: var(--text-primary);">
+            <span class="close-modal" id="close-savings-math">&times;</span>
+            <h2 style="margin-top:0; color: var(--accent-color);">Cost Savings Calculations</h2>
+            <div style="margin-top: 20px; line-height: 1.6;">
+                <p style="color: var(--text-secondary); margin-bottom: 20px;">These calculations apply to the V1 table (which aggregates all data sources) and the V2 tables (which are isolated to Purchase Orders and Consumption separately).</p>
+                <h3>Price Variance</h3>
+                <pre style="background: rgba(0,0,0,0.05); padding: 15px; border-radius: 8px; color: var(--text-primary); font-family: monospace; white-space: pre-wrap; word-wrap: break-word; border: 1px solid rgba(0,0,0,0.1);">price_variance = (actual_unit_price - contract_price) * total_quantity</pre>
+                <p style="color: var(--text-secondary); margin-bottom: 20px;">Calculates the difference between the actual unit price paid (from Consumption or POs) and the matched historic contract unit price, multiplied by the quantity.</p>
+                
+                <h3>Total Identified Savings</h3>
+                <pre style="background: rgba(0,0,0,0.05); padding: 15px; border-radius: 8px; color: var(--text-primary); font-family: monospace; white-space: pre-wrap; word-wrap: break-word; border: 1px solid rgba(0,0,0,0.1);">Total Savings = SUM(price_variance) WHERE price_variance > 0</pre>
+                <p style="color: var(--text-secondary);">Aggregates all positive price variances across records to identify the total systemic cost savings opportunity.</p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

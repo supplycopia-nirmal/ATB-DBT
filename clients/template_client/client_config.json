@@ -1,0 +1,29 @@
+{
+  "client_id": "CLIENT-NEW-000",
+  "client_name": "Template Client Hospital",
+  "client_type": "HealthCare System / GPO / Ambulatory Services",
+  "ehr_system": "Epic / Cerner / MEDITECH / Infor CloudSuite",
+  "s3_bucket": "s3://supplycopia-client-data-lake/clients/<client_slug>/",
+  "sources": {
+    "consumption": "spend_consumption_feed.csv",
+    "purchase_orders": "po_purchase_orders.csv",
+    "contracts": "contracts_master.csv",
+    "item_master": "item_catalog.csv",
+    "invoices": "accounts_payable_invoices.csv"
+  },
+  "join_topology": {
+    "consumption_to_contracts": {
+      "join_type": "left",
+      "keys": ["contract_number", "item_id"]
+    },
+    "po_to_invoices": {
+      "join_type": "left",
+      "keys": ["po_id", "po_line"]
+    }
+  },
+  "snowflake_target": {
+    "database": "SUPPLYCOPIA_TRANSFORM",
+    "schema": "SCRETAIL_IMPORT",
+    "table_prefix": "SC_<CLIENT_SLUG>"
+  }
+}

@@ -1,0 +1,6 @@
+uc_health:
+  outputs:
+    dev:
+      type: duckdb
+      path: uc_health.duckdb
+  target: dev
