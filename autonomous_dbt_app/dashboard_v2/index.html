@@ -48,13 +48,13 @@
             🐝 Ask The Bee <span class="saved-badge-pill" id="header-saved-count">1</span>
           </div>
           <div>
-            <h1>Autonomous DBT Pipeline Studio <span class="port-tag">PORT 8081</span></h1>
+            <h1>Autonomous DBT Pipeline Studio</h1>
           </div>
         </div>
         <div class="header-right">
           <div id="tenant-pill" class="badge badge-primary">Tenant: UC Health (CL_UCH_001)</div>
           <div id="parity-badge" class="badge badge-success">Parity: 100% Match</div>
-          <div id="status-badge" class="badge badge-primary">State: READY</div>
+          <div id="status-badge" class="badge badge-primary clickable-badge" onclick="handleStatusBadgeClick()" title="Click to review pending review gate or current pipeline stage">State: READY</div>
           <button class="btn btn-secondary" onclick="openEnterpriseModal()">⚡ Enterprise Suite</button>
           
           <!-- Notification Bell -->
@@ -169,6 +169,21 @@
                     <option value="GPO">Group Purchasing Organization (GPO)</option>
                     <option value="Ambulatory Services">Ambulatory Surgery Center (ASC)</option>
                     <option value="Academic Medical Center">Academic Medical Center</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="select-load-mode">Ingestion & Load Mode</label>
+                  <select id="select-load-mode">
+                    <option value="bulk" selected>📦 Bulk Historical Load (Full Table Rebuild - 2-5 Years)</option>
+                    <option value="incremental">⚡ Incremental Delta Load (Watermarked Delta Append / Upsert)</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="select-incremental-cadence">Incremental Sync Cadence</label>
+                  <select id="select-incremental-cadence">
+                    <option value="daily" selected>Daily Feed (Every 24 Hours)</option>
+                    <option value="weekly">Weekly Sync (Every Sunday Midnight)</option>
+                    <option value="monthly">Monthly Accounting Close</option>
                   </select>
                 </div>
                 <div class="form-group">

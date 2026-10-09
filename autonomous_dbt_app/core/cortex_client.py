@@ -39,30 +39,31 @@ class CortexClient:
         if system_prompt:
             full_prompt = f"System Instruction:\n{system_prompt}\n\nUser Request:\n{prompt}"
 
-        # 1. Attempt Snowflake Cortex REST / SQL completion if credentials available
+        # 1. Prioritize OpenAI API if OPENAI_API_KEY is available
+        if self.openai_key:
+            try:
+                res = self._call_openai(full_prompt, system_prompt, temperature)
+                if res and not res.startswith("[MOCK_OR_OFFLINE"):
+                    return res
+            except Exception as e:
+                print(f"[CortexClient] OpenAI invocation note: {e}")
+
+        # 2. Attempt Snowflake Cortex REST completion if credentials available
         if self.pat and self.url:
             try:
                 res = self._call_cortex_rest(full_prompt, chosen_model)
                 if res:
                     return res
             except Exception as e:
-                # Log and proceed to SQL connector or OpenAI fallback
                 print(f"[CortexClient] REST attempt note: {e}")
 
-        # 2. Attempt Snowflake SQL connection with SNOWFLAKE.CORTEX.COMPLETE
+        # 3. Attempt Snowflake SQL connection with SNOWFLAKE.CORTEX.COMPLETE
         try:
             res = self._call_cortex_sql(full_prompt, chosen_model)
             if res:
                 return res
         except Exception as e:
             print(f"[CortexClient] SQL Cortex attempt note: {e}")
-
-        # 3. Fallback to OpenAI API if available
-        if self.openai_key:
-            try:
-                return self._call_openai(full_prompt, system_prompt, temperature)
-            except Exception as e:
-                print(f"[CortexClient] OpenAI fallback error: {e}")
 
         # 4. Deterministic fallback if external LLM unavailable
         return f"[MOCK_OR_OFFLINE_RESPONSE for model {chosen_model}]: Completed prompt analysis."
@@ -149,11 +150,15 @@ class CortexClient:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
 
+        model_name = OPENAI_MODEL if OPENAI_MODEL else "gpt-4o"
         payload = {
-            "model": OPENAI_MODEL if OPENAI_MODEL else "gpt-4o",
-            "messages": messages,
-            "temperature": temperature
+            "model": model_name,
+            "messages": messages
         }
+        # Models like gpt-5.6-luna, o1, o3 only support default temperature=1
+        if "luna" not in model_name.lower() and not model_name.lower().startswith("o"):
+            payload["temperature"] = temperature
+
         req = urllib.request.Request(endpoint, data=json.dumps(payload).encode('utf-8'), headers=headers, method="POST")
         with urllib.request.urlopen(req, timeout=45) as resp:
             data = json.loads(resp.read().decode('utf-8'))

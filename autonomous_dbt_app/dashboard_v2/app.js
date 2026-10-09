@@ -327,13 +327,19 @@ async function pollStatus() {
     const data = await res.json();
     const badge = document.getElementById('status-badge');
     if (badge) {
-      badge.textContent = `State: ${data.status || 'READY'}`;
-      if (data.status === 'COMPLETED' || data.status === 'WAITING_USER_REVIEW' || data.status === 'DBT_SUCCESS') {
-        badge.className = 'badge badge-success';
-      } else if (data.status === 'FAILED') {
-        badge.className = 'badge badge-danger';
+      const st = data.status || 'READY';
+      badge.textContent = `State: ${st}`;
+      badge.className = 'badge clickable-badge ';
+      if (st === 'COMPLETED' || st === 'AUDITED_CERTIFIED' || st === 'DBT_SUCCESS') {
+        badge.className += 'badge-success';
+      } else if (st === 'WAITING_USER_REVIEW') {
+        badge.className += 'badge-warning pulse-highlight';
+      } else if (st === 'TOPOLOGY_APPROVED') {
+        badge.className += 'badge-primary';
+      } else if (st === 'FAILED') {
+        badge.className += 'badge-danger';
       } else {
-        badge.className = 'badge badge-primary';
+        badge.className += 'badge-primary';
       }
     }
     const parityBadge = document.getElementById('parity-badge');
@@ -349,6 +355,54 @@ async function pollStatus() {
   } catch (err) {
     console.error('Error polling status:', err);
   }
+}
+
+async function handleStatusBadgeClick() {
+  try {
+    const res = await fetch('/api/status');
+    const data = await res.json();
+    const status = data.status || 'READY';
+    const hitl = data.hitl_checkpoints || {};
+
+    if (status === 'WAITING_USER_REVIEW') {
+      if (!hitl.checkpoint_1_joins_approved) {
+        // Stage 3 Join Topology requires user review
+        switchStage('joins');
+        showToast("Review Gate Required", "Navigated to Stage 3: Operator must review & confirm Join Topology.", "info");
+        highlightElement('stage-joins', 3000);
+      } else {
+        // Stage 6 Parity / QA audit review
+        switchStage('parity');
+        showToast("Audit Review", "Navigated to Stage 6: Golden Parity & QA verification audit.", "info");
+        highlightElement('stage-parity', 3000);
+      }
+    } else if (status === 'PROFILED') {
+      switchStage('profile');
+      showToast("Profile Complete", "Navigated to Stage 2: Discovered datasets and classification.", "info");
+      highlightElement('stage-profile', 3000);
+    } else if (status === 'AUDITED_CERTIFIED' || status === 'COMPLETED') {
+      switchStage('parity');
+      showToast("Certified Pipeline", "Navigated to Stage 6: 100% Golden Parity certification verified.", "success");
+      highlightElement('stage-parity', 3000);
+    } else if (status === 'TOPOLOGY_APPROVED') {
+      switchStage('lineage');
+      showToast("Topology Approved", "Navigated to Stage 4: Interactive Lineage & DBT DAG.", "info");
+      highlightElement('stage-lineage', 3000);
+    } else {
+      switchStage('ingest');
+      showToast("Ingestion Stage", "Navigated to Stage 1: Cloud Ingestion & Multi-Tenancy.", "info");
+      highlightElement('stage-ingest', 3000);
+    }
+  } catch (err) {
+    switchStage('joins');
+  }
+}
+
+function highlightElement(elementId, duration = 2500) {
+  const el = document.getElementById(elementId);
+  if (!el) return;
+  el.classList.add('pulse-highlight');
+  setTimeout(() => el.classList.remove('pulse-highlight'), duration);
 }
 
 async function loadPipelineSummary() {
@@ -798,10 +852,15 @@ async function executeDbtPipeline() {
   btn.textContent = '⚙️ Swarm Working...';
 
   try {
+    const loadMode = document.getElementById('select-load-mode')?.value || 'bulk';
+    const cadence = document.getElementById('select-incremental-cadence')?.value || 'daily';
+
     const res = await fetch('/api/run_pipeline', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        load_mode: loadMode,
+        cadence: cadence,
         folder_path: 'output/staged_client_data',
         client_metadata: {
           client_id: 'CL_UCH_001',
@@ -1402,12 +1461,12 @@ async function sendChatMessage() {
   if (!msg) return;
 
   const msgBox = document.getElementById('chat-messages');
-  msgBox.innerHTML += `<div class="chat-bubble user">${msg}</div>`;
+  msgBox.innerHTML += `<div class="chat-bubble user">${escapeHtml(msg)}</div>`;
   input.value = '';
   msgBox.scrollTop = msgBox.scrollHeight;
 
   const loadingId = 'loading-' + Date.now();
-  msgBox.innerHTML += `<div id="${loadingId}" class="chat-bubble bot" style="opacity: 0.7;">🐝 Thinking...</div>`;
+  msgBox.innerHTML += `<div id="${loadingId}" class="chat-bubble bot" style="opacity: 0.7;">🐝 Consulting Bee Swarm...</div>`;
   msgBox.scrollTop = msgBox.scrollHeight;
 
   try {
@@ -1418,11 +1477,155 @@ async function sendChatMessage() {
     });
     const data = await res.json();
     document.getElementById(loadingId)?.remove();
-    msgBox.innerHTML += `<div class="chat-bubble bot">${data.reply || 'Swarm processed your request.'}</div>`;
+
+    const botBubbleId = 'bot-msg-' + Date.now();
+    const botDiv = document.createElement('div');
+    botDiv.className = 'chat-bubble bot';
+    botDiv.id = botBubbleId;
+
+    if (data.delegated_bee) {
+      const badge = document.createElement('div');
+      badge.className = 'chat-delegation-badge';
+      badge.textContent = `🐝 Resolved by: ${data.delegated_bee}`;
+      botDiv.appendChild(badge);
+    }
+
+    const contentDiv = document.createElement('div');
+    contentDiv.className = 'chat-content-text';
+    botDiv.appendChild(contentDiv);
+
+    msgBox.appendChild(botDiv);
     msgBox.scrollTop = msgBox.scrollHeight;
+
+    // Stream text character by character with typewriter animation
+    const fullText = data.reply || 'Swarm processed your request.';
+    await streamText(contentDiv, fullText, msgBox);
+
+    // Append Interactive Action Chips if provided
+    if (data.action_chips && data.action_chips.length > 0) {
+      const actionsDiv = document.createElement('div');
+      actionsDiv.className = 'chat-bubble-actions';
+      data.action_chips.forEach(chip => {
+        const btn = document.createElement('button');
+        btn.className = 'chat-action-btn' + (chip.action === 'navigate_stage' ? ' secondary' : '');
+        btn.textContent = chip.label;
+        btn.onclick = () => executeChatAction(chip.action, chip.param);
+        actionsDiv.appendChild(btn);
+      });
+      botDiv.appendChild(actionsDiv);
+      msgBox.scrollTop = msgBox.scrollHeight;
+    }
+
   } catch (err) {
     document.getElementById(loadingId)?.remove();
-    msgBox.innerHTML += `<div class="chat-bubble bot" style="color: #ef4444;">❌ Error communicating with Ask The Bee.</div>`;
+    msgBox.innerHTML += `<div class="chat-bubble bot" style="color: #ef4444;">❌ Error communicating with Ask The Bee: ${err.message}</div>`;
+  }
+}
+
+// Character-by-character typewriter streaming
+function streamText(targetEl, text, scrollContainer) {
+  return new Promise(resolve => {
+    let index = 0;
+    const speed = text.length > 500 ? 5 : 12; // Dynamic speed based on response length
+    
+    // Add blinking cursor
+    const cursor = document.createElement('span');
+    cursor.className = 'chat-cursor';
+    targetEl.appendChild(cursor);
+
+    function typeChar() {
+      if (index < text.length) {
+        index += 2; // Step by 2 chars for responsiveness
+        const currentSubstring = text.slice(0, index);
+        targetEl.innerHTML = parseMarkdownToHtml(currentSubstring);
+        targetEl.appendChild(cursor);
+        if (scrollContainer) scrollContainer.scrollTop = scrollContainer.scrollHeight;
+        setTimeout(typeChar, speed);
+      } else {
+        cursor.remove();
+        targetEl.innerHTML = parseMarkdownToHtml(text);
+        if (scrollContainer) scrollContainer.scrollTop = scrollContainer.scrollHeight;
+        resolve();
+      }
+    }
+    typeChar();
+  });
+}
+
+// Rich Markdown to HTML Parser (Headers, Bolds, Lists, Tables, Code)
+function parseMarkdownToHtml(md) {
+  if (!md) return '';
+  let html = md;
+
+  // Code blocks ```sql ... ```
+  html = html.replace(/```([a-z]*)\n([\s\S]*?)```/g, (match, lang, code) => {
+    return `<pre><code>${escapeHtml(code.trim())}</code></pre>`;
+  });
+
+  // Inline code `code`
+  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+  // Bold **text**
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
+  // Headers ### Header
+  html = html.replace(/^### (.*$)/gim, '<h4 style="margin:6px 0 4px 0; color:#38bdf8;">$1</h4>');
+  html = html.replace(/^## (.*$)/gim, '<h3 style="margin:8px 0 4px 0; color:#38bdf8;">$1</h3>');
+
+  // Markdown Tables: | col1 | col2 |
+  if (html.includes('|')) {
+    html = html.replace(/(?:^|\n)(\|.*\|(?:\r?\n\|.*\|)+)/g, (match, tableBlock) => {
+      const lines = tableBlock.trim().split('\n').filter(l => l.trim().startsWith('|'));
+      if (lines.length < 2) return match;
+      
+      let tableHtml = '<table class="chat-table"><thead><tr>';
+      const headers = lines[0].split('|').slice(1, -1);
+      headers.forEach(h => { tableHtml += `<th>${h.trim()}</th>`; });
+      tableHtml += '</tr></thead><tbody>';
+
+      // Skip separator line (index 1)
+      for (let i = 2; i < lines.length; i++) {
+        const cells = lines[i].split('|').slice(1, -1);
+        tableHtml += '<tr>';
+        cells.forEach(c => { tableHtml += `<td>${c.trim()}</td>`; });
+        tableHtml += '</tr>';
+      }
+      tableHtml += '</tbody></table>';
+      return tableHtml;
+    });
+  }
+
+  // Bullet points
+  html = html.replace(/^\s*-\s+(.*$)/gim, '<li>$1</li>');
+  html = html.replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>');
+
+  // Newlines to <br> (when not inside tables/pre)
+  html = html.replace(/\n\n/g, '<br><br>');
+
+  return html;
+}
+
+function escapeHtml(str) {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// Interactive chat actions
+function executeChatAction(action, param) {
+  if (action === 'download_excel') {
+    showToast("Exporting Excel", `Generating full multi-tab ${param.toUpperCase()} underlying workbook...`, "info");
+    window.location.href = `/api/enterprise/export_excel?dataset=${param}`;
+  } else if (action === 'navigate_stage') {
+    switchStage(param);
+    showToast("Navigated", `Switched to Stage: ${param.toUpperCase()}`, "info");
+  } else if (action === 'open_enterprise_modal') {
+    openEnterpriseModal();
+    if (param) switchEntTab(param);
+  } else if (action === 'open_snowflake_modal') {
+    openSnowflakeModal();
+  } else if (action === 'confirm_joins') {
+    confirmJoinsAndProceed();
+  } else if (action === 'run_pipeline') {
+    triggerGuidedSwarmWorkflow();
   }
 }
 
