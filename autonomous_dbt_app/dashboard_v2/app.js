@@ -97,16 +97,22 @@ function showToast(title, message, type = 'info') {
 
   // Ensure errors and warnings are recorded in the notification drawer so they are never missed
   if (type === 'error' || type === 'warning') {
-    addNotification(title, message);
+    addNotification(title, message, true);
   }
 }
 
 // Notification Drawer
-function addNotification(title, desc) {
-  notifications.unshift({ title, desc, time: "Just now" });
+let unreadNotificationsCount = 2;
+
+function addNotification(title, desc, isError = false) {
+  notifications.unshift({ title, desc, time: "Just now", isError });
+  unreadNotificationsCount++;
   renderNotifications();
   const badge = document.getElementById('notification-badge');
-  if (badge) badge.textContent = notifications.length;
+  if (badge) {
+    badge.textContent = unreadNotificationsCount;
+    badge.style.display = 'inline-block';
+  }
 }
 
 function renderNotifications() {
@@ -117,9 +123,11 @@ function renderNotifications() {
     return;
   }
   list.innerHTML = notifications.map(n => `
-    <div class="notif-item">
-      <div class="notif-item-title">${n.title}</div>
-      <div style="color:#94a3b8;">${n.desc}</div>
+    <div class="notif-item" style="${n.isError ? 'border-left: 3px solid #ef4444; background: rgba(239, 68, 68, 0.05);' : ''}">
+      <div class="notif-item-title" style="${n.isError ? 'color: #f87171;' : ''}">
+        ${n.isError ? '⚠️ ' : ''}${escapeHtml(n.title)}
+      </div>
+      <div style="color:#cbd5e1; font-size: 11px;">${escapeHtml(n.desc)}</div>
       <div class="notif-item-time">${n.time}</div>
     </div>
   `).join('');
@@ -130,6 +138,7 @@ function toggleNotificationDrawer() {
   if (drawer) {
     drawer.classList.toggle('open');
     if (drawer.classList.contains('open')) {
+      unreadNotificationsCount = 0;
       const badge = document.getElementById('notification-badge');
       if (badge) badge.textContent = '0';
     }
@@ -138,6 +147,7 @@ function toggleNotificationDrawer() {
 
 function clearNotifications() {
   notifications = [];
+  unreadNotificationsCount = 0;
   renderNotifications();
   const badge = document.getElementById('notification-badge');
   if (badge) badge.textContent = '0';
@@ -894,16 +904,19 @@ async function approvePipelineAudit() {
         btn.classList.add('btn-secondary');
         btn.disabled = true;
       }
-      pollPipelineStatus();
+      pollStatus();
     } else {
-      showToast("Certification Error", data.message || "Failed to certify pipeline", "error");
+      const errMsg = data.message || "Failed to certify pipeline";
+      showToast("Certification Error", errMsg, "error");
+      openAutoResolveModal(errMsg, "Pipeline Audit Certification (Stage 6)");
       if (btn) {
         btn.disabled = false;
         btn.innerHTML = '✅ Approve Audit &amp; Certify Pipeline';
       }
     }
   } catch (err) {
-    showToast("Error", err.message, "error");
+    showToast("Audit Error", err.message, "error");
+    openAutoResolveModal(err.message, "Pipeline Audit Exception");
     if (btn) {
       btn.disabled = false;
       btn.innerHTML = '✅ Approve Audit &amp; Certify Pipeline';
@@ -1848,7 +1861,7 @@ async function executeAutoResolvePlan() {
       loadOutputTableData();
       loadParityDetails();
       reloadDbtIframe();
-      pollPipelineStatus();
+      pollStatus();
     } else {
       showToast("Auto-Resolve Failed", data.message || "Failed to execute resolution patch.", "error");
     }
