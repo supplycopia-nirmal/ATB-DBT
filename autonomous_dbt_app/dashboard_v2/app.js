@@ -81,18 +81,24 @@ function closeLightbox(isConfirm) {
 // Floating Toast Notifications
 function showToast(title, message, type = 'info') {
   const container = document.getElementById('toast-container');
-  if (!container) return;
-  const toast = document.createElement('div');
-  const typeClass = type === 'success' ? 'toast-success' : (type === 'warning' ? 'toast-warning' : (type === 'error' ? 'toast-error' : ''));
-  const icon = type === 'success' ? '✅' : (type === 'warning' ? '⚠️' : (type === 'error' ? '❌' : 'ℹ️'));
-  toast.className = `toast ${typeClass}`;
-  toast.innerHTML = `<span>${icon}</span><div><strong>${title}</strong><div style="font-size:11px; color:#cbd5e1;">${message}</div></div>`;
-  container.appendChild(toast);
-  setTimeout(() => {
-    toast.style.opacity = '0';
-    toast.style.transform = 'translateX(100%)';
-    setTimeout(() => toast.remove(), 300);
-  }, 4000);
+  if (container) {
+    const toast = document.createElement('div');
+    const typeClass = type === 'success' ? 'toast-success' : (type === 'warning' ? 'toast-warning' : (type === 'error' ? 'toast-error' : ''));
+    const icon = type === 'success' ? '✅' : (type === 'warning' ? '⚠️' : (type === 'error' ? '❌' : 'ℹ️'));
+    toast.className = `toast ${typeClass}`;
+    toast.innerHTML = `<span>${icon}</span><div><strong>${title}</strong><div style="font-size:11px; color:#cbd5e1;">${message}</div></div>`;
+    container.appendChild(toast);
+    setTimeout(() => {
+      toast.style.opacity = '0';
+      toast.style.transform = 'translateX(100%)';
+      setTimeout(() => toast.remove(), 300);
+    }, 4000);
+  }
+
+  // Ensure errors and warnings are recorded in the notification drawer so they are never missed
+  if (type === 'error' || type === 'warning') {
+    addNotification(title, message);
+  }
 }
 
 // Notification Drawer
@@ -931,8 +937,9 @@ async function executeDbtPipeline() {
     });
     const result = await res.json();
     if (!res.ok || result.status === 'ERROR' || result.status === 'FAILED') {
-      showLightbox("Pipeline Execution Error", result.message || "Failed to execute pipeline", "❌");
-      showToast("Pipeline Execution Error", result.message || "Execution encountered an error", "error");
+      const errMsg = result.message || "Pipeline execution encountered an error";
+      showToast("Pipeline Execution Error", errMsg, "error");
+      openAutoResolveModal(errMsg, "Autonomous Swarm Execution (Tab 4)");
       return;
     }
 
@@ -951,7 +958,8 @@ async function executeDbtPipeline() {
     showToast("Pipeline Succeeded", `All models compiled with ${parityPct}% Golden Parity.`, "success");
     addNotification("Pipeline Run Successful", `Full dbt pipeline executed and verified against baseline (${parityPct}% match)`);
   } catch (err) {
-    showLightbox("Compilation Failed", err.message, "❌");
+    showToast("Pipeline Compilation Failed", err.message, "error");
+    openAutoResolveModal(err.message, "Pipeline Network/Compilation Fault");
   } finally {
     btn.disabled = false;
     btn.textContent = '⚡ Run Autonomous Swarm';
@@ -1165,16 +1173,24 @@ async function runAutomatedTestSuite() {
       const tests = data.tests || [];
       const tbody = document.getElementById('test-matrix-tbody');
       if (tbody) {
-        tbody.innerHTML = tests.map(t => `
+        tbody.innerHTML = tests.map(t => {
+          const actionBtn = t.status === 'FAIL' 
+            ? `<button class="btn btn-warning btn-sm" style="padding: 2px 6px; font-size: 10px;" onclick="openAutoResolveModal('${escapeHtml(t.id + ': ' + t.assertion + ' failed on ' + t.target + ' (' + t.metric + ')')}', 'Test Suite Assertion (${t.id})')">🛠️ Auto-Resolve</button>` 
+            : '';
+          return `
           <tr>
             <td><code>${t.id}</code></td>
             <td><strong>${t.assertion}</strong><br><span style="font-size:11px; color:var(--text-muted);">${t.category}</span></td>
             <td><code>${t.target}</code></td>
             <td><code style="color:#38bdf8; font-size:11px;">${t.sql}</code></td>
             <td>${t.metric}</td>
-            <td><span class="badge ${t.status==='PASS'?'badge-success':'badge-danger'}">${t.status}</span></td>
+            <td>
+              <span class="badge ${t.status==='PASS'?'badge-success':'badge-danger'}">${t.status}</span>
+              ${actionBtn}
+            </td>
           </tr>
-        `).join('');
+        `;
+        }).join('');
       }
 
       document.getElementById('kpi-test-total').textContent = data.total_assertions;
@@ -1183,8 +1199,15 @@ async function runAutomatedTestSuite() {
       document.getElementById('kpi-test-time').textContent = `${data.execution_time_ms} ms`;
       document.getElementById('test-pass-count').textContent = data.passed;
 
-      showToast("Test Suite Passed", `Executed ${data.total_assertions} automated test assertions (${data.compliance_rate} pass rate).`, "success");
-      addNotification("Automated Test Suite", `Full test suite completed in ${data.execution_time_ms}ms with 100% compliance.`);
+      if (data.failed > 0) {
+        const failedTest = tests.find(t => t.status === 'FAIL');
+        const errDetail = `${failedTest.id}: ${failedTest.assertion} failed on ${failedTest.target}. ${failedTest.metric} (Expected: ${failedTest.sql})`;
+        showToast("Assertion Failure Detected", `${data.failed} test assertion failed. Generating auto-resolve plan...`, "warning");
+        openAutoResolveModal(errDetail, `Automated Test Suite (${failedTest.id})`);
+      } else {
+        showToast("Test Suite Passed", `Executed ${data.total_assertions} automated test assertions (${data.compliance_rate} pass rate).`, "success");
+        addNotification("Automated Test Suite", `Full test suite completed in ${data.execution_time_ms}ms with 100% compliance.`);
+      }
     }
   } catch (err) {
     showToast("Test Suite Failed", err.message, "error");
@@ -1692,3 +1715,154 @@ function executeChatAction(action, param) {
 function formatCurrency(val) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val || 0);
 }
+
+// Clear Chat History & Reset Memory
+async function clearChatHistory() {
+  const msgBox = document.getElementById('chat-messages');
+  if (msgBox) {
+    msgBox.innerHTML = `
+      <div class="chat-bubble bot">
+        👋 Conversation reset. Memory store cleared. Ask me anything about your datasets, join cascades, or clinical procedure savings.
+      </div>
+    `;
+  }
+  const input = document.getElementById('chat-user-input');
+  if (input) input.value = '';
+
+  try {
+    const res = await fetch('/api/clear_chat', { method: 'POST' });
+    const data = await res.json();
+    if (res.ok) {
+      showToast("Chat Cleared", "Chat history and memory have been reset.", "success");
+      addNotification("Conversation Reset", "Operator initiated fresh chat session.");
+    }
+  } catch (err) {
+    console.error("Failed to clear chat memory on server:", err);
+  }
+}
+
+// Auto-Resolve Implementation Plan Controller
+let currentAutoResolveError = "";
+let currentAutoResolveContext = "";
+let currentAutoResolvePlan = "";
+
+async function openAutoResolveModal(errorText, context = "Pipeline Execution") {
+  currentAutoResolveError = errorText;
+  currentAutoResolveContext = context;
+  
+  const modal = document.getElementById('auto-resolve-modal');
+  if (!modal) return;
+
+  document.getElementById('auto-resolve-error-text').textContent = errorText;
+  document.getElementById('auto-resolve-subtitle').textContent = `Target: ${context}`;
+  const planBox = document.getElementById('auto-resolve-plan-content');
+  planBox.innerHTML = `<span style="color:#fbbf24;">⚙️ Sentinel Aegis (Inspector Bee Guard) is synthesizing root-cause implementation plan...</span>`;
+  document.getElementById('auto-resolve-user-feedback').value = '';
+  modal.style.display = 'flex';
+
+  try {
+    const res = await fetch('/api/auto_resolve/generate_plan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        error: errorText,
+        context: context
+      })
+    });
+    const data = await res.json();
+    if (res.ok && data.status === 'SUCCESS') {
+      currentAutoResolvePlan = data.plan;
+      planBox.innerHTML = parseMarkdownToHtml(data.plan);
+    } else {
+      planBox.innerHTML = `<div style="color:#ef4444;">Failed to formulate plan: ${data.message || 'Unknown error'}</div>`;
+    }
+  } catch (err) {
+    planBox.innerHTML = `<div style="color:#ef4444;">Error communicating with diagnostic engine: ${err.message}</div>`;
+  }
+}
+
+function closeAutoResolveModal() {
+  const modal = document.getElementById('auto-resolve-modal');
+  if (modal) modal.style.display = 'none';
+}
+
+async function reiterateImplementationPlan() {
+  const feedbackInput = document.getElementById('auto-resolve-user-feedback');
+  const userFeedback = feedbackInput ? feedbackInput.value.trim() : '';
+  if (!userFeedback) {
+    showToast("Feedback Needed", "Please enter your adjustment or constraint to reiterate the plan.", "info");
+    return;
+  }
+
+  const planBox = document.getElementById('auto-resolve-plan-content');
+  planBox.innerHTML = `<span style="color:#38bdf8;">🔄 Re-evaluating implementation plan incorporating your directive: "${escapeHtml(userFeedback)}"...</span>`;
+
+  try {
+    const res = await fetch('/api/auto_resolve/generate_plan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        error: currentAutoResolveError,
+        context: currentAutoResolveContext,
+        feedback: userFeedback
+      })
+    });
+    const data = await res.json();
+    if (res.ok && data.status === 'SUCCESS') {
+      currentAutoResolvePlan = data.plan;
+      planBox.innerHTML = parseMarkdownToHtml(data.plan);
+      showToast("Plan Re-evaluated", "Incorporated operator feedback into updated auto-resolve plan.", "success");
+      addNotification("Plan Re-evaluated", `Sentinel Aegis adapted implementation plan based on operator feedback.`);
+    }
+  } catch (err) {
+    planBox.innerHTML = `<div style="color:#ef4444;">Error: ${err.message}</div>`;
+  }
+}
+
+async function executeAutoResolvePlan() {
+  const btn = document.getElementById('auto-resolve-btn-execute');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '⚙️ Executing Resolution Patch...';
+  }
+
+  try {
+    const userFeedback = document.getElementById('auto-resolve-user-feedback')?.value.trim() || '';
+    const res = await fetch('/api/auto_resolve/execute', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        error: currentAutoResolveError,
+        plan: currentAutoResolvePlan,
+        feedback: userFeedback
+      })
+    });
+    const data = await res.json();
+    if (res.ok && data.status === 'SUCCESS') {
+      closeAutoResolveModal();
+      showToast("Auto-Resolve Succeeded", "Applied patch and recompiled models successfully.", "success");
+      addNotification("Auto-Resolve Certified", `Resolved: ${currentAutoResolveError.substring(0, 50)}...`);
+      
+      // Refresh UI components
+      loadPipelineSummary();
+      loadOutputTableData();
+      loadParityDetails();
+      reloadDbtIframe();
+      pollPipelineStatus();
+    } else {
+      showToast("Auto-Resolve Failed", data.message || "Failed to execute resolution patch.", "error");
+    }
+  } catch (err) {
+    showToast("Execution Error", err.message, "error");
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '⚡ Approve &amp; Auto-Resolve';
+    }
+  }
+}
+
+// Session Initialization: Reset chatbot memory on page load
+window.addEventListener('DOMContentLoaded', () => {
+  fetch('/api/clear_chat', { method: 'POST' }).catch(() => {});
+});
