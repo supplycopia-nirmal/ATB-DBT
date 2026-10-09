@@ -135,20 +135,28 @@ Please provide ONLY the corrected, executable DuckDB SQL statement without markd
             metrics_comp = {}
             # 2. Compare table-specific metrics
             if table == "fct_consumption_cost_savings_v4":
-                base_spend, base_savings, base_overpay, base_matched = con_base.execute("""
+                base_cols = [c[0] for c in con_base.execute(f"DESCRIBE {table};").fetchall()]
+                auto_cols = [c[0] for c in con_auto.execute(f"DESCRIBE {table};").fetchall()]
+
+                base_sav_col = "savings_opportunity" if "savings_opportunity" in base_cols else ("price_variance2" if "price_variance2" in base_cols else "0.0")
+                base_ovp_col = "overpayment_amount" if "overpayment_amount" in base_cols else ("price_variance2" if "price_variance2" in base_cols else "0.0")
+                auto_sav_col = "savings_opportunity" if "savings_opportunity" in auto_cols else "0.0"
+                auto_ovp_col = "overpayment_amount" if "overpayment_amount" in auto_cols else "0.0"
+
+                base_spend, base_savings, base_overpay, base_matched = con_base.execute(f"""
                     SELECT 
                         round(sum(coalesce(line_spend, 0)), 2),
-                        round(sum(coalesce(savings_opportunity, 0)), 2),
-                        round(sum(coalesce(overpayment_amount, 0)), 2),
+                        round(sum(coalesce({base_sav_col}, 0)), 2),
+                        round(sum(coalesce({base_ovp_col}, 0)), 2),
                         sum(case when is_contract_matched then 1 else 0 end)
                     FROM fct_consumption_cost_savings_v4;
                 """).fetchone()
 
-                auto_spend, auto_savings, auto_overpay, auto_matched = con_auto.execute("""
+                auto_spend, auto_savings, auto_overpay, auto_matched = con_auto.execute(f"""
                     SELECT 
                         round(sum(coalesce(line_spend, 0)), 2),
-                        round(sum(coalesce(savings_opportunity, 0)), 2),
-                        round(sum(coalesce(overpayment_amount, 0)), 2),
+                        round(sum(coalesce({auto_sav_col}, 0)), 2),
+                        round(sum(coalesce({auto_ovp_col}, 0)), 2),
                         sum(case when is_contract_matched then 1 else 0 end)
                     FROM fct_consumption_cost_savings_v4;
                 """).fetchone()
@@ -166,18 +174,24 @@ Please provide ONLY the corrected, executable DuckDB SQL statement without markd
                 }
 
             elif table == "fct_po_cost_savings_v4":
-                base_spend, base_savings, base_matched = con_base.execute("""
+                base_cols = [c[0] for c in con_base.execute(f"DESCRIBE {table};").fetchall()]
+                auto_cols = [c[0] for c in con_auto.execute(f"DESCRIBE {table};").fetchall()]
+
+                base_sav_col = "savings_opportunity" if "savings_opportunity" in base_cols else ("price_variance2" if "price_variance2" in base_cols else "0.0")
+                auto_sav_col = "savings_opportunity" if "savings_opportunity" in auto_cols else "0.0"
+
+                base_spend, base_savings, base_matched = con_base.execute(f"""
                     SELECT 
                         round(sum(coalesce(total_value, 0)), 2),
-                        round(sum(coalesce(savings_opportunity, 0)), 2),
+                        round(sum(coalesce({base_sav_col}, 0)), 2),
                         sum(case when is_contract_matched then 1 else 0 end)
                     FROM fct_po_cost_savings_v4;
                 """).fetchone()
 
-                auto_spend, auto_savings, auto_matched = con_auto.execute("""
+                auto_spend, auto_savings, auto_matched = con_auto.execute(f"""
                     SELECT 
                         round(sum(coalesce(total_value, 0)), 2),
-                        round(sum(coalesce(savings_opportunity, 0)), 2),
+                        round(sum(coalesce({auto_sav_col}, 0)), 2),
                         sum(case when is_contract_matched then 1 else 0 end)
                     FROM fct_po_cost_savings_v4;
                 """).fetchone()
