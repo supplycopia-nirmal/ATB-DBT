@@ -23,6 +23,7 @@ enriched as (
 calculated as (
     select
         e.*,
+        -- Savings Metrics
         case 
             when e.price_variance2 > 0 then e.price_variance2 
             else 0.0 
@@ -35,7 +36,21 @@ calculated as (
         case 
             when e.is_contract_matched and abs(coalesce(e.price_variance2, 0.0)) <= {{ var('price_variance_threshold') }} * coalesce(e.line_spend, 1.0) then true
             else false
-        end as is_contract_compliant
+        end as is_contract_compliant,
+
+        -- 17 Explicit Dashboard Parity Columns
+        e.contract_start_date as contract_start,
+        e.contract_end_date as contract_end,
+        case when e.item_uom = e.contract_uom then 'Y' else 'N' end as contract_uom_matches_po_uom,
+        case when e.is_contract_matched then 'On contract' else 'Off contract' end as contract_status,
+        case when e.is_contract_matched then 'Y' else 'N' end as has_current_contract,
+        current_date as current_contract_as_of,
+        e.contract_number as current_contract_number,
+        e.contract_price as current_contract_price,
+        e.contract_uom as current_contract_uom,
+        e.contract_start_date as current_contract_start,
+        e.contract_end_date as current_contract_end,
+        case when e.item_uom = e.contract_uom then 'Y' else 'N' end as current_contract_uom_matches_po_uom
     from enriched e
 )
 

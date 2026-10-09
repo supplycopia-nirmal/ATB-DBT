@@ -6,6 +6,168 @@ t0 = time.time()
 con = duckdb.connect('uc_health/uc_health.duckdb')
 con.execute("PRAGMA threads=4;")
 
+print("0a. Ensuring seed views and cleaned staging views...")
+
+# Create product_class_master_1 view
+con.execute("""
+CREATE OR REPLACE VIEW product_class_master_1 AS
+SELECT * FROM read_csv('uc_health/seeds/product_class_master_1.csv', header=True, all_varchar=True);
+""")
+
+# Rebuild stg_item_master_v4 with whitespace cleaning and seed enrichment
+con.execute("""
+CREATE OR REPLACE VIEW stg_item_master_v4 AS
+with raw_source as (
+    select * from read_csv('Data/UHC_IM_20260930010918.csv', delim='|', header=True, all_varchar=True, null_padding=True, ignore_errors=True)
+),
+cleaned as (
+    select
+        case when item_id is null or trim(item_id) in ('', 'NULL', 'N/A') then null else regexp_replace(trim(item_id), '\\s+', ' ', 'g') end as item_id,
+        case when item_description is null or trim(item_description) in ('', 'NULL', 'N/A') then null else regexp_replace(trim(item_description), '\\s+', ' ', 'g') end as item_description,
+        case when manufacturer_part_number is null or trim(manufacturer_part_number) in ('', 'NULL', 'N/A') then null else regexp_replace(trim(manufacturer_part_number), '\\s+', ' ', 'g') end as mfr_part_number,
+        case when manufacture_name is null or trim(manufacture_name) in ('', 'NULL', 'N/A') then null else regexp_replace(trim(manufacture_name), '\\s+', ' ', 'g') end as mfr_name,
+        case when vendor_name is null or trim(vendor_name) in ('', 'NULL', 'N/A') then null else upper(regexp_replace(trim(vendor_name), '\\s+', ' ', 'g')) end as vendor_name,
+        case when vendor_part_number is null or trim(vendor_part_number) in ('', 'NULL', 'N/A') then null else regexp_replace(trim(vendor_part_number), '\\s+', ' ', 'g') end as vendor_part_number,
+        case when vendor_code is null or trim(vendor_code) in ('', 'NULL', 'N/A') then null else regexp_replace(trim(vendor_code), '\\s+', ' ', 'g') end as vendor_code,
+        case when contract_number is null or trim(contract_number) in ('', 'NULL', 'N/A') then null else regexp_replace(trim(contract_number), '\\s+', ' ', 'g') end as contract_number,
+        case when contract_description is null or trim(contract_description) in ('', 'NULL', 'N/A') then null else regexp_replace(trim(contract_description), '\\s+', ' ', 'g') end as contract_description,
+        try_cast(contract_start as timestamp) as contract_start_date,
+        try_cast(contract_end as timestamp) as contract_end_date,
+        try_cast(contract_price as double) as contract_price,
+        try_cast(contract_qoe as integer) as contract_qoe,
+        case when unspsc is null or trim(unspsc) in ('', 'NULL', 'N/A') then null else regexp_replace(trim(unspsc), '\\s+', ' ', 'g') end as unspsc_code,
+        case when unspsc_description is null or trim(unspsc_description) in ('', 'NULL', 'N/A') then null else regexp_replace(trim(unspsc_description), '\\s+', ' ', 'g') end as unspsc_description,
+        case when upper(trim(is_active)) in ('ACTIVE', 'Y', 'TRUE', '1') then true else false end as is_active,
+        row_number() over (
+            partition by trim(item_id)
+            order by case when upper(trim(is_active)) in ('ACTIVE', 'Y', 'TRUE', '1') then 1 else 0 end desc,
+                     try_cast(contract_start as timestamp) desc nulls last
+        ) as _dedup_rn
+    from raw_source
+    where trim(item_id) is not null
+),
+deduped as (
+    select
+        item_id, item_description, mfr_part_number, mfr_name, vendor_name, vendor_part_number,
+        vendor_code, contract_number, contract_description, contract_start_date, contract_end_date,
+        contract_price, contract_qoe, unspsc_code, unspsc_description, is_active,
+        'UHC_IM_20260930010918.csv' as _source_file,
+        row_number() over () as _source_row_number,
+        md5(concat(coalesce(cast(item_id as varchar), ''), coalesce(cast(mfr_part_number as varchar), ''))) as _row_hash,
+        current_timestamp as _ingested_at
+    from cleaned
+    where _dedup_rn = 1
+)
+select * from deduped;
+""")
+
+# Rebuild stg_contracts_v4 with whitespace cleaning
+con.execute("""
+CREATE OR REPLACE VIEW stg_contracts_v4 AS
+with raw_source as (
+    select * from read_csv('Data/UHC_CON_20260930010958.csv', delim='|', header=True, all_varchar=True, null_padding=True, ignore_errors=True, quote='\"', strict_mode=False)
+),
+cleaned as (
+    select
+        case when contract_number is null or trim(contract_number) in ('', 'NULL', 'N/A') then null else regexp_replace(trim(contract_number), '\\s+', ' ', 'g') end as contract_number,
+        case when contract_description is null or trim(contract_description) in ('', 'NULL', 'N/A') then null else regexp_replace(trim(contract_description), '\\s+', ' ', 'g') end as contract_description,
+        try_cast(contract_start as timestamp) as contract_start_date,
+        try_cast(contract_end as timestamp) as contract_end_date,
+        case when contract_uom is null or trim(contract_uom) in ('', 'NULL', 'N/A') then null else upper(regexp_replace(trim(contract_uom), '\\s+', ' ', 'g')) end as contract_uom,
+        try_cast(contract_qoe as integer) as contract_qoe,
+        try_cast(contract_price as double) as contract_price,
+        try_cast(contract_ea_price as double) as contract_ea_price,
+        case when item_id is null or trim(item_id) in ('', 'NULL', 'N/A') then null else regexp_replace(trim(item_id), '\\s+', ' ', 'g') end as item_id,
+        case when item_description is null or trim(item_description) in ('', 'NULL', 'N/A') then null else regexp_replace(trim(item_description), '\\s+', ' ', 'g') end as item_description,
+        case when manufacturer_part_number is null or trim(manufacturer_part_number) in ('', 'NULL', 'N/A') then null else regexp_replace(trim(manufacturer_part_number), '\\s+', ' ', 'g') end as manufacturer_part_number,
+        case when manufacture_name is null or trim(manufacture_name) in ('', 'NULL', 'N/A') then null else regexp_replace(trim(manufacture_name), '\\s+', ' ', 'g') end as manufacture_name,
+        case when vendor_name is null or trim(vendor_name) in ('', 'NULL', 'N/A') then null else upper(regexp_replace(trim(vendor_name), '\\s+', ' ', 'g')) end as vendor_name,
+        case when contract_category is null or trim(contract_category) in ('', 'NULL', 'N/A') then null else regexp_replace(trim(contract_category), '\\s+', ' ', 'g') end as contract_category,
+        try_cast(list_price as double) as list_price,
+        case when pricing_tier is null or trim(pricing_tier) in ('', 'NULL', 'N/A') then null else regexp_replace(trim(pricing_tier), '\\s+', ' ', 'g') end as pricing_tier,
+        case when tier_requirements is null or trim(tier_requirements) in ('', 'NULL', 'N/A') then null else regexp_replace(trim(tier_requirements), '\\s+', ' ', 'g') end as tier_requirements,
+        'UHC_CON_20260930010958.csv' as _source_file,
+        row_number() over () as _source_row_number,
+        md5(concat(coalesce(cast(contract_number as varchar), ''), coalesce(cast(item_id as varchar), ''))) as _row_hash,
+        current_timestamp as _ingested_at
+    from raw_source
+    where trim(contract_number) is not null
+      and trim(item_id) is not null
+      and try_cast(contract_price as double) is not null
+)
+select * from cleaned
+where contract_end_date is null or contract_end_date >= contract_start_date;
+""")
+
+# Rebuild int_item_master_enriched_v4 with seed enrichment
+con.execute("""
+CREATE OR REPLACE TABLE int_item_master_enriched_v4 AS
+with item_master as (
+    select * from stg_item_master_v4
+),
+pcm as (
+    select * from product_class_master_1
+),
+classified as (
+    select
+        im.*,
+        pcm.final_class as pcm_final_class,
+        pcm.final_subclass as pcm_final_subclass,
+        pcm.unspsc_description as pcm_unspsc_description,
+        case 
+            when im.contract_qoe is not null and im.contract_qoe > 0 then im.contract_price / im.contract_qoe
+            else im.contract_price
+        end as im_unit_contract_price,
+        case when im.vendor_code is null or trim(im.vendor_code) in ('', 'N/A', 'NA', 'NULL') then true else false end as is_missing_vendor_code,
+        case when im.mfr_name is null or trim(im.mfr_name) in ('', 'N/A', 'NA', 'NULL') then true else false end as is_missing_mfr_name,
+        coalesce(
+            pcm.final_class,
+            case
+                when upper(coalesce(im.item_description, '')) like '%IMPLANT%'
+                  or upper(coalesce(im.item_description, '')) like '%SCREW%'
+                  or upper(coalesce(im.item_description, '')) like '%PLATE%'
+                  or upper(coalesce(im.item_description, '')) like '%SPINE%'
+                  or upper(coalesce(im.item_description, '')) like '%BONE%' then 'Orthopedic / Implants'
+                when upper(coalesce(im.item_description, '')) like '%STENT%'
+                  or upper(coalesce(im.item_description, '')) like '%PACEMAKER%'
+                  or upper(coalesce(im.item_description, '')) like '%BALLOON%'
+                  or upper(coalesce(im.item_description, '')) like '%CATH%' then 'Cardiology'
+                when upper(coalesce(im.item_description, '')) like '%GLOVE%'
+                  or upper(coalesce(im.item_description, '')) like '%MASK%'
+                  or upper(coalesce(im.item_description, '')) like '%GOWN%'
+                  or upper(coalesce(im.item_description, '')) like '%PPE%' then 'PPE / Apparel'
+                when upper(coalesce(im.item_description, '')) like '%SUTURE%'
+                  or upper(coalesce(im.item_description, '')) like '%STAPLE%'
+                  or upper(coalesce(im.item_description, '')) like '%BLADE%' then 'Surgical Supplies'
+                when upper(coalesce(im.item_description, '')) like '%DRESSING%'
+                  or upper(coalesce(im.item_description, '')) like '%GAUZE%'
+                  or upper(coalesce(im.item_description, '')) like '%WOUND%' then 'Wound Care'
+                when upper(coalesce(im.item_description, '')) like '%SYRINGE%'
+                  or upper(coalesce(im.item_description, '')) like '%NEEDLE%'
+                  or upper(coalesce(im.item_description, '')) like '%IV%' then 'IV & Injection'
+                when im.unspsc_description is not null and trim(im.unspsc_description) != '' then trim(im.unspsc_description)
+                else 'General Medical (Unclassified)'
+            end
+        ) as custom_category
+    from item_master im
+    left join pcm on im.unspsc_code = pcm.unspsc_code
+),
+scored as (
+    select
+        c.*,
+        coalesce(c.pcm_final_subclass, 'Unclassified') as product_subclass,
+        coalesce(c.pcm_unspsc_description, c.unspsc_description) as final_unspsc_description,
+        (
+            100 
+            - (case when c.is_missing_vendor_code then 20 else 0 end)
+            - (case when c.is_missing_mfr_name then 20 else 0 end)
+            - (case when c.custom_category = 'General Medical (Unclassified)' then 10 else 0 end)
+        ) as data_quality_score
+    from classified c
+)
+select * from scored;
+""")
+
 print("0. Updating stg_consumption_v4 view...")
 con.execute("""
 CREATE OR REPLACE VIEW stg_consumption_v4 AS
@@ -17,31 +179,31 @@ uom_mapping as (
 ),
 parsed as (
     select
-        LOG_ID as log_id,
-        FACILITY as facility,
-        MEDICAL_RECORD_NUMBER as medical_record_number,
-        "CASE_ID / ENCOUNTER FHIR ID" as case_id,
-        "CASE_ID / ENCOUNTER FHIR ID" as "CASE_ID / ENCOUNTER FHIR ID",
-        DRG_CODE as drg_code,
-        trim(SURGICAL_HIERARCHY) as surgical_hierarchy,
-        trim(SURGICAL_HIERARCHY) as "SURGICAL_HIERARCHY",
-        trim(BILLED_CPT_CODE) as billed_cpt_code,
-        trim(BILLED_CPT_CODE) as "BILLED_CPT_CODE",
-        trim(PRIMARY_ICD10_PX_CODE) as primary_icd10_px_code,
-        trim(PRIMARY_ICD10_PX_CODE) as "PRIMARY_ICD10_PX_CODE",
-        PRIMARY_PROCEDURE as primary_procedure,
-        SERVICE_LINE as service_line,
-        PATIENT_TYPE as patient_type,
-        LEAD_SURGEON as lead_surgeon,
-        trim(PAYOR_GROUP) as payor_group,
-        trim(PAYOR_GROUP) as "PAYOR_GROUP",
+        case when LOG_ID is null or trim(LOG_ID) in ('', 'NULL') then null else regexp_replace(trim(LOG_ID), '\\s+', ' ', 'g') end as log_id,
+        case when FACILITY is null or trim(FACILITY) in ('', 'NULL') then null else regexp_replace(trim(FACILITY), '\\s+', ' ', 'g') end as facility,
+        case when MEDICAL_RECORD_NUMBER is null or trim(MEDICAL_RECORD_NUMBER) in ('', 'NULL') then null else regexp_replace(trim(MEDICAL_RECORD_NUMBER), '\\s+', ' ', 'g') end as medical_record_number,
+        case when "CASE_ID / ENCOUNTER FHIR ID" is null or trim("CASE_ID / ENCOUNTER FHIR ID") in ('', 'NULL') then null else regexp_replace(trim("CASE_ID / ENCOUNTER FHIR ID"), '\\s+', ' ', 'g') end as case_id,
+        case when "CASE_ID / ENCOUNTER FHIR ID" is null or trim("CASE_ID / ENCOUNTER FHIR ID") in ('', 'NULL') then null else regexp_replace(trim("CASE_ID / ENCOUNTER FHIR ID"), '\\s+', ' ', 'g') end as "CASE_ID / ENCOUNTER FHIR ID",
+        case when DRG_CODE is null or trim(DRG_CODE) in ('', 'NULL') then null else regexp_replace(trim(DRG_CODE), '\\s+', ' ', 'g') end as drg_code,
+        case when SURGICAL_HIERARCHY is null or trim(SURGICAL_HIERARCHY) in ('', 'NULL') then null else regexp_replace(trim(SURGICAL_HIERARCHY), '\\s+', ' ', 'g') end as surgical_hierarchy,
+        case when SURGICAL_HIERARCHY is null or trim(SURGICAL_HIERARCHY) in ('', 'NULL') then null else regexp_replace(trim(SURGICAL_HIERARCHY), '\\s+', ' ', 'g') end as "SURGICAL_HIERARCHY",
+        case when BILLED_CPT_CODE is null or trim(BILLED_CPT_CODE) in ('', 'NULL') then null else regexp_replace(trim(BILLED_CPT_CODE), '\\s+', ' ', 'g') end as billed_cpt_code,
+        case when BILLED_CPT_CODE is null or trim(BILLED_CPT_CODE) in ('', 'NULL') then null else regexp_replace(trim(BILLED_CPT_CODE), '\\s+', ' ', 'g') end as "BILLED_CPT_CODE",
+        case when PRIMARY_ICD10_PX_CODE is null or trim(PRIMARY_ICD10_PX_CODE) in ('', 'NULL') then null else regexp_replace(trim(PRIMARY_ICD10_PX_CODE), '\\s+', ' ', 'g') end as primary_icd10_px_code,
+        case when PRIMARY_ICD10_PX_CODE is null or trim(PRIMARY_ICD10_PX_CODE) in ('', 'NULL') then null else regexp_replace(trim(PRIMARY_ICD10_PX_CODE), '\\s+', ' ', 'g') end as "PRIMARY_ICD10_PX_CODE",
+        case when PRIMARY_PROCEDURE is null or trim(PRIMARY_PROCEDURE) in ('', 'NULL') then null else regexp_replace(trim(PRIMARY_PROCEDURE), '\\s+', ' ', 'g') end as primary_procedure,
+        case when SERVICE_LINE is null or trim(SERVICE_LINE) in ('', 'NULL') then null else regexp_replace(trim(SERVICE_LINE), '\\s+', ' ', 'g') end as service_line,
+        case when PATIENT_TYPE is null or trim(PATIENT_TYPE) in ('', 'NULL') then null else regexp_replace(trim(PATIENT_TYPE), '\\s+', ' ', 'g') end as patient_type,
+        case when LEAD_SURGEON is null or trim(LEAD_SURGEON) in ('', 'NULL') then null else regexp_replace(trim(LEAD_SURGEON), '\\s+', ' ', 'g') end as lead_surgeon,
+        case when PAYOR_GROUP is null or trim(PAYOR_GROUP) in ('', 'NULL') then null else regexp_replace(trim(PAYOR_GROUP), '\\s+', ' ', 'g') end as payor_group,
+        case when PAYOR_GROUP is null or trim(PAYOR_GROUP) in ('', 'NULL') then null else regexp_replace(trim(PAYOR_GROUP), '\\s+', ' ', 'g') end as "PAYOR_GROUP",
         try_cast(ADMIT_DATE_TIME as timestamp) as admit_date_time,
         try_cast(DISCHARGE_DATE_TIME as timestamp) as discharge_date_time,
         try_cast(LOS as double) as length_of_stay,
         try_cast(LOS as double) as "LOS",
         try_cast(GMLOS as double) as gmlos,
         try_cast(GMLOS as double) as "GMLOS",
-        ACCOUNT_NUMBER as account_number,
+        case when ACCOUNT_NUMBER is null or trim(ACCOUNT_NUMBER) in ('', 'NULL') then null else regexp_replace(trim(ACCOUNT_NUMBER), '\\s+', ' ', 'g') end as account_number,
         try_cast(CONTRACT_PRICE as double) as contract_price,
         try_cast(TOTAL_ACQUISITION_COST as double) as total_acquisition_cost,
         try_cast(SUPPLY_UNIT_PRICE as double) as supply_unit_price,
@@ -57,44 +219,44 @@ parsed as (
         try_cast(TOTAL_ADJ as double) as "TOTAL_ADJ",
         try_cast(TOTAL_PMTS as double) as total_pmts,
         try_cast(TOTAL_PMTS as double) as "TOTAL_PMTS",
-        trim("SSI (0/1)") as ssi_flag,
-        trim("SSI (0/1)") as "SSI (0/1)",
-        trim("BLOOD_TRANSFUSION_FLAG (0/1)") as blood_transfusion_flag,
-        trim("BLOOD_TRANSFUSION_FLAG (0/1)") as "BLOOD_TRANSFUSION_FLAG (0/1)",
-        trim("READMISSION_INDEX_CASE (0/1)") as readmission_index_case,
-        trim("READMISSION_INDEX_CASE (0/1)") as "READMISSION_INDEX_CASE (0/1)",
-        trim("MORTALITY (0/1)") as mortality_flag,
-        trim("MORTALITY (0/1)") as "MORTALITY (0/1)",
-        trim("RISK OF MORTALITY") as risk_of_mortality,
-        trim("RISK OF MORTALITY") as "RISK OF MORTALITY",
-        trim(MANUFACTURER_NAME) as manufacturer_name,
-        trim(MANUFACTURER_CATALOG_NUMBER) as manufacturer_catalog_number,
-        trim(ITEM_NUMBER) as item_number,
-        trim(ITEM_DESCRIPTION) as item_description,
+        case when "SSI (0/1)" is null or trim("SSI (0/1)") in ('', 'NULL') then null else regexp_replace(trim("SSI (0/1)"), '\\s+', ' ', 'g') end as ssi_flag,
+        case when "SSI (0/1)" is null or trim("SSI (0/1)") in ('', 'NULL') then null else regexp_replace(trim("SSI (0/1)"), '\\s+', ' ', 'g') end as "SSI (0/1)",
+        case when "BLOOD_TRANSFUSION_FLAG (0/1)" is null or trim("BLOOD_TRANSFUSION_FLAG (0/1)") in ('', 'NULL') then null else regexp_replace(trim("BLOOD_TRANSFUSION_FLAG (0/1)"), '\\s+', ' ', 'g') end as blood_transfusion_flag,
+        case when "BLOOD_TRANSFUSION_FLAG (0/1)" is null or trim("BLOOD_TRANSFUSION_FLAG (0/1)") in ('', 'NULL') then null else regexp_replace(trim("BLOOD_TRANSFUSION_FLAG (0/1)"), '\\s+', ' ', 'g') end as "BLOOD_TRANSFUSION_FLAG (0/1)",
+        case when "READMISSION_INDEX_CASE (0/1)" is null or trim("READMISSION_INDEX_CASE (0/1)") in ('', 'NULL') then null else regexp_replace(trim("READMISSION_INDEX_CASE (0/1)"), '\\s+', ' ', 'g') end as readmission_index_case,
+        case when "READMISSION_INDEX_CASE (0/1)" is null or trim("READMISSION_INDEX_CASE (0/1)") in ('', 'NULL') then null else regexp_replace(trim("READMISSION_INDEX_CASE (0/1)"), '\\s+', ' ', 'g') end as "READMISSION_INDEX_CASE (0/1)",
+        case when "MORTALITY (0/1)" is null or trim("MORTALITY (0/1)") in ('', 'NULL') then null else regexp_replace(trim("MORTALITY (0/1)"), '\\s+', ' ', 'g') end as mortality_flag,
+        case when "MORTALITY (0/1)" is null or trim("MORTALITY (0/1)") in ('', 'NULL') then null else regexp_replace(trim("MORTALITY (0/1)"), '\\s+', ' ', 'g') end as "MORTALITY (0/1)",
+        case when "RISK OF MORTALITY" is null or trim("RISK OF MORTALITY") in ('', 'NULL') then null else regexp_replace(trim("RISK OF MORTALITY"), '\\s+', ' ', 'g') end as risk_of_mortality,
+        case when "RISK OF MORTALITY" is null or trim("RISK OF MORTALITY") in ('', 'NULL') then null else regexp_replace(trim("RISK OF MORTALITY"), '\\s+', ' ', 'g') end as "RISK OF MORTALITY",
+        case when MANUFACTURER_NAME is null or trim(MANUFACTURER_NAME) in ('', 'NULL') then null else regexp_replace(trim(MANUFACTURER_NAME), '\\s+', ' ', 'g') end as manufacturer_name,
+        case when MANUFACTURER_CATALOG_NUMBER is null or trim(MANUFACTURER_CATALOG_NUMBER) in ('', 'NULL') then null else regexp_replace(trim(MANUFACTURER_CATALOG_NUMBER), '\\s+', ' ', 'g') end as manufacturer_catalog_number,
+        case when ITEM_NUMBER is null or trim(ITEM_NUMBER) in ('', 'NULL') then null else regexp_replace(trim(ITEM_NUMBER), '\\s+', ' ', 'g') end as item_number,
+        case when ITEM_DESCRIPTION is null or trim(ITEM_DESCRIPTION) in ('', 'NULL') then null else regexp_replace(trim(ITEM_DESCRIPTION), '\\s+', ' ', 'g') end as item_description,
         upper(trim(coalesce(ITEM_UOM, 'EA'))) as raw_item_uom,
         try_cast(ITEM_QOE as double) as item_qoe,
         try_cast(ITEM_QOE as double) as "ITEM_QOE",
-        trim(SUPPLIER) as supplier,
-        trim(CONTRACT_CATEGORY) as contract_category,
-        trim(SPEND_CATEGORY) as spend_category,
-        trim(UNSPSC_CODE) as unspsc_code,
-        trim(CONTRACT_FLAG) as contract_flag,
-        trim(ASA_RATING) as asa_rating,
-        trim(ASA_RATING) as "ASA_RATING",
-        trim(BMI_BUCKET) as bmi_bucket,
-        trim(BMI_BUCKET) as "BMI_BUCKET",
-        trim("ROBOTICS (0/1)") as robotics_flag,
-        trim("ROBOTICS (0/1)") as "ROBOTICS (0/1)",
-        trim(SMOKING_STATUS) as smoking_status,
-        trim(SMOKING_STATUS) as "SMOKING_STATUS",
-        trim("DIABETIC_STATUS (0/1)") as diabetic_status,
-        trim("DIABETIC_STATUS (0/1)") as "DIABETIC_STATUS (0/1)",
-        trim(PATIENT_AGE_BUCKET) as patient_age_bucket,
-        trim(PATIENT_AGE_BUCKET) as "PATIENT_AGE_BUCKET",
-        trim(PATIENT_GENDER) as patient_gender,
-        trim(PATIENT_GENDER) as "PATIENT_GENDER",
-        trim(ETHNICITY) as ethnicity,
-        trim(ETHNICITY) as "ETHNICITY"
+        case when SUPPLIER is null or trim(SUPPLIER) in ('', 'NULL') then null else upper(regexp_replace(trim(SUPPLIER), '\\s+', ' ', 'g')) end as supplier,
+        case when CONTRACT_CATEGORY is null or trim(CONTRACT_CATEGORY) in ('', 'NULL') then null else regexp_replace(trim(CONTRACT_CATEGORY), '\\s+', ' ', 'g') end as contract_category,
+        case when SPEND_CATEGORY is null or trim(SPEND_CATEGORY) in ('', 'NULL') then null else regexp_replace(trim(SPEND_CATEGORY), '\\s+', ' ', 'g') end as spend_category,
+        case when UNSPSC_CODE is null or trim(UNSPSC_CODE) in ('', 'NULL') then null else upper(regexp_replace(trim(UNSPSC_CODE), '\\s+', ' ', 'g')) end as unspsc_code,
+        case when CONTRACT_FLAG is null or trim(CONTRACT_FLAG) in ('', 'NULL') then null else regexp_replace(trim(CONTRACT_FLAG), '\\s+', ' ', 'g') end as contract_flag,
+        case when ASA_RATING is null or trim(ASA_RATING) in ('', 'NULL') then null else regexp_replace(trim(ASA_RATING), '\\s+', ' ', 'g') end as asa_rating,
+        case when ASA_RATING is null or trim(ASA_RATING) in ('', 'NULL') then null else regexp_replace(trim(ASA_RATING), '\\s+', ' ', 'g') end as "ASA_RATING",
+        case when BMI_BUCKET is null or trim(BMI_BUCKET) in ('', 'NULL') then null else regexp_replace(trim(BMI_BUCKET), '\\s+', ' ', 'g') end as bmi_bucket,
+        case when BMI_BUCKET is null or trim(BMI_BUCKET) in ('', 'NULL') then null else regexp_replace(trim(BMI_BUCKET), '\\s+', ' ', 'g') end as "BMI_BUCKET",
+        case when "ROBOTICS (0/1)" is null or trim("ROBOTICS (0/1)") in ('', 'NULL') then null else regexp_replace(trim("ROBOTICS (0/1)"), '\\s+', ' ', 'g') end as robotics_flag,
+        case when "ROBOTICS (0/1)" is null or trim("ROBOTICS (0/1)") in ('', 'NULL') then null else regexp_replace(trim("ROBOTICS (0/1)"), '\\s+', ' ', 'g') end as "ROBOTICS (0/1)",
+        case when SMOKING_STATUS is null or trim(SMOKING_STATUS) in ('', 'NULL') then null else regexp_replace(trim(SMOKING_STATUS), '\\s+', ' ', 'g') end as smoking_status,
+        case when SMOKING_STATUS is null or trim(SMOKING_STATUS) in ('', 'NULL') then null else regexp_replace(trim(SMOKING_STATUS), '\\s+', ' ', 'g') end as "SMOKING_STATUS",
+        case when "DIABETIC_STATUS (0/1)" is null or trim("DIABETIC_STATUS (0/1)") in ('', 'NULL') then null else regexp_replace(trim("DIABETIC_STATUS (0/1)"), '\\s+', ' ', 'g') end as diabetic_status,
+        case when "DIABETIC_STATUS (0/1)" is null or trim("DIABETIC_STATUS (0/1)") in ('', 'NULL') then null else regexp_replace(trim("DIABETIC_STATUS (0/1)"), '\\s+', ' ', 'g') end as "DIABETIC_STATUS (0/1)",
+        case when PATIENT_AGE_BUCKET is null or trim(PATIENT_AGE_BUCKET) in ('', 'NULL') then null else regexp_replace(trim(PATIENT_AGE_BUCKET), '\\s+', ' ', 'g') end as patient_age_bucket,
+        case when PATIENT_AGE_BUCKET is null or trim(PATIENT_AGE_BUCKET) in ('', 'NULL') then null else regexp_replace(trim(PATIENT_AGE_BUCKET), '\\s+', ' ', 'g') end as "PATIENT_AGE_BUCKET",
+        case when PATIENT_GENDER is null or trim(PATIENT_GENDER) in ('', 'NULL') then null else regexp_replace(trim(PATIENT_GENDER), '\\s+', ' ', 'g') end as patient_gender,
+        case when PATIENT_GENDER is null or trim(PATIENT_GENDER) in ('', 'NULL') then null else regexp_replace(trim(PATIENT_GENDER), '\\s+', ' ', 'g') end as "PATIENT_GENDER",
+        case when ETHNICITY is null or trim(ETHNICITY) in ('', 'NULL') then null else regexp_replace(trim(ETHNICITY), '\\s+', ' ', 'g') end as ethnicity,
+        case when ETHNICITY is null or trim(ETHNICITY) in ('', 'NULL') then null else regexp_replace(trim(ETHNICITY), '\\s+', ' ', 'g') end as "ETHNICITY"
     from source
 ),
 standardized as (
@@ -140,7 +302,7 @@ select * from normalized;
 """)
 print(f"int_consumption_normalized_v4 refreshed, rows: {con.execute('SELECT count(*) FROM int_consumption_normalized_v4').fetchone()[0]}")
 
-print("1. Rebuilding int_item_matching_v4 keyed on row_id...")
+print("1. Rebuilding int_item_matching_v4 keyed on row_id with categorization enrichment...")
 con.execute("""
 CREATE OR REPLACE TABLE int_item_matching_v4 AS
 with cons as (
@@ -216,6 +378,9 @@ select
     c.log_id,
     dm.matched_item_id,
     im_ref.unspsc_code as mapped_unspsc,
+    im_ref.unspsc_code as im_unspsc,
+    im_ref.product_subclass,
+    im_ref.final_unspsc_description as unspsc_description,
     coalesce(dm.im_match_tier, 99) as im_match_tier,
     coalesce(dm.im_match_rule, 'no_match') as im_match_rule,
     coalesce(dm.im_match_confidence_score, 0.0) as im_match_confidence_score,
@@ -361,6 +526,9 @@ flags as (
         c.*,
         im.matched_item_id,
         im.mapped_unspsc,
+        im.im_unspsc,
+        im.product_subclass,
+        im.unspsc_description,
         im.im_match_tier,
         im.im_match_rule,
         im.is_item_master_matched,
@@ -372,6 +540,8 @@ flags as (
         con.mapped_contract_ea_price,
         con.contract_uom,
         con.item_contract_category,
+        con.contract_start_date,
+        con.contract_end_date,
         con.contract_match_tier,
         con.contract_match_rule,
         con.is_contract_matched,
@@ -426,28 +596,34 @@ with distinct_drg as (
     select distinct drg_code, primary_procedure
     from int_consumption_normalized_v4
     where drg_code is not null or primary_procedure is not null
+),
+cortex_map as (
+    select distinct
+        raw_drg_code,
+        raw_procedure,
+        standardized_procedure,
+        primary_drg_code,
+        procedure_group
+    from read_parquet('output/drg_procedure_mapping_v4.parquet')
 )
 select
-    drg_code,
-    primary_procedure,
-    split_part(coalesce(drg_code, ''), '|', 1) as primary_drg_code,
-    case
-        when upper(coalesce(primary_procedure, '')) like '%KNEE%' or upper(coalesce(primary_procedure, '')) like '%HIP%' or upper(coalesce(primary_procedure, '')) like '%ARTHROPLASTY%' then 'Orthopedic Reconstruction'
-        when upper(coalesce(primary_procedure, '')) like '%SPINE%' or upper(coalesce(primary_procedure, '')) like '%FUSION%' then 'Spinal Surgery'
-        when upper(coalesce(primary_procedure, '')) like '%CORONARY%' or upper(coalesce(primary_procedure, '')) like '%VALVE%' or upper(coalesce(primary_procedure, '')) like '%CARDIAC%' then 'Cardiovascular Surgery'
-        when upper(coalesce(primary_procedure, '')) like '%COLON%' or upper(coalesce(primary_procedure, '')) like '%BOWEL%' or upper(coalesce(primary_procedure, '')) like '%HERNIA%' then 'General & Colorectal Surgery'
-        when upper(coalesce(primary_procedure, '')) like '%NEURO%' or upper(coalesce(primary_procedure, '')) like '%BRAIN%' or upper(coalesce(primary_procedure, '')) like '%CRANIAL%' then 'Neurosurgery'
-        else 'General Clinical Procedure'
-    end as primary_procedure_group,
-    'v4_pipeline_rule_engine' as llm_model_used,
-    'v4.0' as llm_prompt_version,
+    d.drg_code,
+    d.primary_procedure,
+    coalesce(m.standardized_procedure, d.primary_procedure) as standardized_procedure,
+    coalesce(m.primary_drg_code, split_part(coalesce(d.drg_code, ''), ',', 1)) as primary_drg_code,
+    coalesce(m.procedure_group, 'General Surgery') as primary_procedure_group,
+    'gemini-3.5-flash-cortex' as llm_model_used,
+    'v4.1' as llm_prompt_version,
     current_timestamp as llm_generated_at
-from distinct_drg;
+from distinct_drg d
+left join cortex_map m 
+    on coalesce(d.drg_code, '') = coalesce(m.raw_drg_code, '')
+    and coalesce(d.primary_procedure, '') = coalesce(m.raw_procedure, '');
 """)
 print(f"int_drg_mapping_v4 done in {time.time()-t3:.1f}s, rows: {con.execute('SELECT count(*) FROM int_drg_mapping_v4').fetchone()[0]}")
 
 t4 = time.time()
-print("5. Building fct_consumption_cost_savings_v4...")
+print("5. Building fct_consumption_cost_savings_v4 with 17 dashboard parity columns...")
 con.execute("""
 CREATE OR REPLACE TABLE fct_consumption_cost_savings_v4 AS
 with cons as (
@@ -459,6 +635,7 @@ drg as (
 enriched as (
     select
         c.*,
+        d.standardized_procedure,
         d.primary_drg_code,
         d.primary_procedure_group,
         round(
@@ -494,7 +671,21 @@ calculated as (
         case 
             when e.is_contract_matched and abs(coalesce(e.price_variance2, 0.0)) <= 0.005 * coalesce(e.line_spend, 1.0) then true
             else false
-        end as is_contract_compliant
+        end as is_contract_compliant,
+
+        -- 17 Explicit Dashboard Parity Columns
+        e.contract_start_date as contract_start,
+        e.contract_end_date as contract_end,
+        case when e.item_uom = e.contract_uom then 'Y' else 'N' end as contract_uom_matches_po_uom,
+        case when e.is_contract_matched then 'On contract' else 'Off contract' end as contract_status,
+        case when e.is_contract_matched then 'Y' else 'N' end as has_current_contract,
+        current_date as current_contract_as_of,
+        e.contract_number as current_contract_number,
+        e.contract_price as current_contract_price,
+        e.contract_uom as current_contract_uom,
+        e.contract_start_date as current_contract_start,
+        e.contract_end_date as current_contract_end,
+        case when e.item_uom = e.contract_uom then 'Y' else 'N' end as current_contract_uom_matches_po_uom
     from enriched e
 )
 select * from calculated;
@@ -502,7 +693,59 @@ select * from calculated;
 print(f"fct_consumption_cost_savings_v4 done in {time.time()-t4:.1f}s, rows: {con.execute('SELECT count(*) FROM fct_consumption_cost_savings_v4').fetchone()[0]}")
 
 t5 = time.time()
-print("6. Building fct_po_cost_savings_v4...")
+print("6. Building fct_po_cost_savings_v4 with 17 dashboard parity columns...")
+
+# Rebuild stg_po_v4 view in DuckDB
+con.execute("""
+CREATE OR REPLACE VIEW stg_po_v4 AS
+with raw_source as (
+    select * from read_csv('Data/UHC_PO_20260930010955.csv', delim='|', header=True, all_varchar=True, null_padding=True, ignore_errors=True)
+),
+cleaned as (
+    select
+        case when po_number is null or trim(po_number) in ('', 'NULL') then null else regexp_replace(trim(po_number), '\\s+', ' ', 'g') end as po_number,
+        case when po_line_no is null or trim(po_line_no) in ('', 'NULL') then null else regexp_replace(trim(po_line_no), '\\s+', ' ', 'g') end as po_line_no,
+        try_cast(po_date as timestamp) as po_date,
+        try_cast(po_last_update_date as timestamp) as po_last_update_date,
+        case when facility_entity_code is null or trim(facility_entity_code) in ('', 'NULL') then null else regexp_replace(trim(facility_entity_code), '\\s+', ' ', 'g') end as facility_entity_code,
+        case when facility_name is null or trim(facility_name) in ('', 'NULL') then null else regexp_replace(trim(facility_name), '\\s+', ' ', 'g') end as facility_name,
+        case when contract_no is null or trim(contract_no) in ('', 'NULL') then null else regexp_replace(trim(contract_no), '\\s+', ' ', 'g') end as contract_number,
+        case when uom is null or trim(uom) in ('', 'NULL') then null else upper(regexp_replace(trim(uom), '\\s+', ' ', 'g')) end as uom,
+        coalesce(try_cast(uom_conv_factor as double), 1.0) as uom_conv_factor,
+        try_cast(quantity as double) as quantity,
+        try_cast(unit_price as double) as unit_price,
+        try_cast(total_value as double) as total_value,
+        case when item_id is null or trim(item_id) in ('', 'NULL') then null else regexp_replace(trim(item_id), '\\s+', ' ', 'g') end as item_id,
+        case when item_description is null or trim(item_description) in ('', 'NULL') then null else regexp_replace(trim(item_description), '\\s+', ' ', 'g') end as item_description,
+        case when manufacture_ERP_id is null or trim(manufacture_ERP_id) in ('', 'NULL') then null else regexp_replace(trim(manufacture_ERP_id), '\\s+', ' ', 'g') end as mfr_erp_id,
+        case when manufacture_name is null or trim(manufacture_name) in ('', 'NULL') then null else regexp_replace(trim(manufacture_name), '\\s+', ' ', 'g') end as mfr_name,
+        case when manufacturer_part_number is null or trim(manufacturer_part_number) in ('', 'NULL') then null else regexp_replace(trim(manufacturer_part_number), '\\s+', ' ', 'g') end as mfr_part_number,
+        case when vendor_code is null or trim(vendor_code) in ('', 'NULL') then null else regexp_replace(trim(vendor_code), '\\s+', ' ', 'g') end as vendor_code,
+        case when vendor_name is null or trim(vendor_name) in ('', 'NULL') then null else upper(regexp_replace(trim(vendor_name), '\\s+', ' ', 'g')) end as vendor_name,
+        case when vendor_part_number is null or trim(vendor_part_number) in ('', 'NULL') then null else regexp_replace(trim(vendor_part_number), '\\s+', ' ', 'g') end as vendor_part_number,
+        row_number() over (
+            partition by trim(po_number), trim(po_line_no)
+            order by try_cast(po_last_update_date as timestamp) desc nulls last
+        ) as _dedup_rn
+    from raw_source
+    where trim(po_number) is not null 
+      and trim(po_line_no) is not null
+),
+deduped as (
+    select
+        po_number, po_line_no, po_date, po_last_update_date, facility_entity_code, facility_name,
+        contract_number, uom, uom_conv_factor, quantity, unit_price, total_value, item_id, item_description,
+        mfr_erp_id, mfr_name, mfr_part_number, vendor_code, vendor_name, vendor_part_number,
+        'UHC_PO_20260930010955.csv' as _source_file,
+        row_number() over () as _source_row_number,
+        md5(concat(coalesce(cast(po_number as varchar), ''), coalesce(cast(po_line_no as varchar), ''))) as _row_hash,
+        current_timestamp as _ingested_at
+    from cleaned
+    where _dedup_rn = 1
+)
+select * from deduped;
+""")
+
 con.execute("""
 CREATE OR REPLACE TABLE fct_po_cost_savings_v4 AS
 with po as (
@@ -536,6 +779,8 @@ po_con as (
         c.contract_price as matched_contract_price,
         c.contract_ea_price as matched_contract_ea_price,
         c.contract_uom as matched_contract_uom,
+        c.contract_start_date as matched_contract_start_date,
+        c.contract_end_date as matched_contract_end_date,
         c.contract_category,
         row_number() over (
             partition by p.po_number, p.po_line_no
@@ -550,6 +795,9 @@ joined as (
     select
         pc.*,
         im.custom_category as product_class,
+        im.product_subclass,
+        im.final_unspsc_description as unspsc_description,
+        im.unspsc_code as im_unspsc,
         im.data_quality_score,
         ia.invoice_count,
         ia.total_invoiced_qty,
@@ -587,7 +835,23 @@ finalized as (
         case 
             when j.is_contract_matched and abs(coalesce(j.price_variance2, 0.0)) <= 0.005 * coalesce(j.total_value, 1.0) then true
             else false
-        end as is_contract_compliant
+        end as is_contract_compliant,
+
+        -- 17 Explicit Dashboard Parity Columns
+        j.matched_contract_price as contract_price,
+        j.matched_contract_start_date as contract_start,
+        j.matched_contract_end_date as contract_end,
+        j.matched_contract_uom as contract_uom,
+        case when j.uom = j.matched_contract_uom then 'Y' else 'N' end as contract_uom_matches_po_uom,
+        case when j.is_contract_matched then 'On contract' else 'Off contract' end as contract_status,
+        case when j.is_contract_matched then 'Y' else 'N' end as has_current_contract,
+        current_date as current_contract_as_of,
+        j.matched_contract_number as current_contract_number,
+        j.matched_contract_price as current_contract_price,
+        j.matched_contract_uom as current_contract_uom,
+        j.matched_contract_start_date as current_contract_start,
+        j.matched_contract_end_date as current_contract_end,
+        case when j.uom = j.matched_contract_uom then 'Y' else 'N' end as current_contract_uom_matches_po_uom
     from joined j
 )
 select * from finalized;

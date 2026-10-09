@@ -139,6 +139,16 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 self._send_json(res)
             except Exception as e:
                 self._send_json({"status": "ERROR", "message": str(e)}, status=500)
+        elif path == "/api/approve_audit":
+            try:
+                state_data = state_mgr.load()
+                state_data.setdefault("hitl_checkpoints", {})["checkpoint_2_audit_approved"] = True
+                state_data["status"] = "AUDITED_CERTIFIED"
+                state_mgr.save(state_data)
+                state_mgr.log_swarm_event("Queen Bee Orla", "Audit Certification", "HITL Approved", "Operator approved golden parity & certified pipeline", "✅")
+                self._send_json({"status": "SUCCESS", "pipeline_status": "AUDITED_CERTIFIED"})
+            except Exception as e:
+                self._send_json({"status": "ERROR", "message": str(e)}, status=500)
         elif path == "/api/push_snowflake":
             try:
                 auto_db = OUTPUT_DIR / "autonomous_pipeline.duckdb"
@@ -306,8 +316,57 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         table_html = ""
         pre_text = ""
 
+        # Intent 0: Savings Opportunities / Top Items / Opportunity Ranking (Direct DuckDB Audit Query)
+        if any(k in lower_msg for k in ["savings", "saving opportunity", "savings opportunities", "top items", "top opportunity", "ranked", "cost reduction"]):
+            delegated_bee = "Architect Bee Pollen & Worker Bee Stitch"
+            if auto_db.exists():
+                try:
+                    con = duckdb.connect(str(auto_db), read_only=True)
+                    top_items_df = con.execute("""
+                        SELECT 
+                            item_number as "Item #",
+                            substr(coalesce(item_description, 'Unknown Item Description'), 1, 30) as "Item Description",
+                            coalesce(supplier, 'Unknown Vendor') as "Vendor",
+                            round(sum(line_spend), 2) as "Total Spend ($)",
+                            round(sum(savings_opportunity), 2) as "Savings Opportunity ($)",
+                            round(avg(supply_unit_price), 2) as "Avg Billed ($)",
+                            round(avg(case when contract_ea_price > 0 then contract_ea_price else null end), 2) as "Benchmark Contract ($)",
+                            max(contract_gap_code) as "Match Rule / Gap"
+                        FROM fct_consumption_cost_savings_v4
+                        WHERE savings_opportunity > 0
+                        GROUP BY item_number, substr(coalesce(item_description, 'Unknown Item Description'), 1, 30), coalesce(supplier, 'Unknown Vendor')
+                        ORDER BY sum(savings_opportunity) DESC
+                        LIMIT 10;
+                    """).fetchdf()
+                    
+                    total_opp = con.execute("SELECT round(sum(savings_opportunity), 2) FROM fct_consumption_cost_savings_v4;").fetchone()[0] or 0.0
+                    total_lines = con.execute("SELECT count(*) FROM fct_consumption_cost_savings_v4 WHERE savings_opportunity > 0;").fetchone()[0] or 0
+                    con.close()
+
+                    pre_text = f"🐝 **Ask The Bee Collective**: Cost savings analysis synthesized directly from certified mart `fct_consumption_cost_savings_v4` for **{tenant_name}**.\n\n"
+                    pre_text += f"- **Total Identified Opportunity**: **${total_opp:,.2f}** across **{total_lines:,} line items**\n"
+                    pre_text += f"- **Methodology**: 4-Tier SupplyCopia item cascades, benchmark contract price matching, and 15% off-contract rationalization.\n\n"
+                    pre_text += "Here are the top 10 ranked cost reduction opportunities by realized dollar impact:\n\n"
+
+                    table_md = "| Item # | Item Description | Vendor | Total Spend ($) | Avg Billed ($) | Benchmark ($) | Savings Opportunity ($) | Status |\n"
+                    table_md += "|---|---|---|---|---|---|---|---|\n"
+                    for _, r in top_items_df.iterrows():
+                        bench_str = f"${r['Benchmark Contract ($)']:,.2f}" if pd.notnull(r['Benchmark Contract ($)']) else "15% off-contract"
+                        table_md += f"| `{r['Item #']}` | {r['Item Description']} | {r['Vendor']} | ${r['Total Spend ($)']:,.2f} | ${r['Avg Billed ($)']:,.2f} | {bench_str} | **${r['Savings Opportunity ($)']:,.2f}** | `{r['Match Rule / Gap']}` |\n"
+                    pre_text += table_md
+
+                    action_chips = [
+                        {"label": "📥 Download Full Savings Excel", "action": "download_excel", "param": "sla"},
+                        {"label": "🔍 View Output Explorer (Stage 5)", "action": "navigate_stage", "param": "explorer"},
+                        {"label": "❄️ Push Marts to Snowflake", "action": "open_snowflake_modal", "param": ""}
+                    ]
+                except Exception as e:
+                    pre_text = f"Encountered error querying savings opportunities: {e}"
+            else:
+                pre_text = f"The savings mart is compiling. Please run the autonomous pipeline to view live opportunities."
+
         # Intent 1: Price Variance Spikes (>50% Above Contract) / Under-the-hood SLA Data
-        if any(k in lower_msg for k in ["price variance", "variance spike", "50%", "overpayment", "sla anomaly", "spike"]):
+        elif any(k in lower_msg for k in ["price variance", "variance spike", "50%", "overpayment", "sla anomaly", "spike"]):
             delegated_bee = "Inspector Bee Guard (QA & Diagnostics)"
             if auto_db.exists():
                 try:

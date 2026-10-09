@@ -37,6 +37,8 @@ po_con as (
         c.contract_price as matched_contract_price,
         c.contract_ea_price as matched_contract_ea_price,
         c.contract_uom as matched_contract_uom,
+        c.contract_start_date as matched_contract_start_date,
+        c.contract_end_date as matched_contract_end_date,
         c.contract_category,
         row_number() over (
             partition by p.po_number, p.po_line_no
@@ -52,6 +54,9 @@ joined as (
     select
         pc.*,
         im.custom_category as product_class,
+        im.product_subclass,
+        im.final_unspsc_description as unspsc_description,
+        im.unspsc_code as im_unspsc,
         im.data_quality_score,
         ia.invoice_count,
         ia.total_invoiced_qty,
@@ -78,7 +83,23 @@ finalized as (
         case 
             when j.is_contract_matched and abs(coalesce(j.price_variance2, 0.0)) <= {{ var('price_variance_threshold') }} * coalesce(j.total_value, 1.0) then true
             else false
-        end as is_contract_compliant
+        end as is_contract_compliant,
+
+        -- 17 Explicit Dashboard Parity Columns
+        j.matched_contract_price as contract_price,
+        j.matched_contract_start_date as contract_start,
+        j.matched_contract_end_date as contract_end,
+        j.matched_contract_uom as contract_uom,
+        case when j.uom = j.matched_contract_uom then 'Y' else 'N' end as contract_uom_matches_po_uom,
+        case when j.is_contract_matched then 'On contract' else 'Off contract' end as contract_status,
+        case when j.is_contract_matched then 'Y' else 'N' end as has_current_contract,
+        current_date as current_contract_as_of,
+        j.matched_contract_number as current_contract_number,
+        j.matched_contract_price as current_contract_price,
+        j.matched_contract_uom as current_contract_uom,
+        j.matched_contract_start_date as current_contract_start,
+        j.matched_contract_end_date as current_contract_end,
+        case when j.uom = j.matched_contract_uom then 'Y' else 'N' end as current_contract_uom_matches_po_uom
     from joined j
 )
 

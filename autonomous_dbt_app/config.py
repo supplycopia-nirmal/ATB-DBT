@@ -21,8 +21,9 @@ PRIVATE_KEY_PASSPHRASE = os.getenv("PRIVATE_KEY_PASSPHRASE", "")
 # AWS S3 Configuration
 AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID", "")
 AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY", "")
-AWS_DEFAULT_REGION = os.getenv("AWS_DEFAULT_REGION", "us-east-1")
+AWS_DEFAULT_REGION = os.getenv("AWS_DEFAULT_REGION", "us-east-2")
 AWS_SESSION_TOKEN = os.getenv("AWS_SESSION_TOKEN", "")
+S3_DEFAULT_BUCKET = os.getenv("S3_DEFAULT_BUCKET", "supplycopia-dbt-ingestion")
 
 # Multi-Tenancy Agnostic Settings
 DEFAULT_CLIENT_NAME = os.getenv("DEFAULT_CLIENT_NAME", "UC Health")

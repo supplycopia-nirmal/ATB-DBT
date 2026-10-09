@@ -4,24 +4,28 @@ with raw_source as (
 
 cleaned as (
     select
-        regexp_replace(trim(invoice_number), '^#\s*', '') as invoice_number,
-        trim(Invoice_line_number) as invoice_line_number,
+        regexp_replace({{ clean_string('invoice_number') }}, '^#\s*', '') as invoice_number,
+        {{ clean_string('Invoice_line_number') }} as invoice_line_number,
         {{ safe_cast('Invoice_paid_date', 'timestamp') }} as invoice_paid_date,
         {{ safe_cast('invoice_raised_date', 'timestamp') }} as invoice_raised_date,
-        {{ safe_cast('invoice_payable_date', 'timestamp') }} as invoice_payable_date,
+        {{ clean_string('facility_entity_code') }} as facility_entity_code,
+        {{ clean_string('po_number') }} as po_number,
+        {{ clean_string('po_line_no') }} as po_line_no,
         {{ safe_cast('invoice_qty', 'double') }} as invoice_qty,
         {{ safe_cast('invoice_unit_price', 'double') }} as invoice_unit_price,
         {{ safe_cast('invoice_total_value', 'double') }} as invoice_total_value,
-        trim(po_number) as po_number,
-        trim(po_line_no) as po_line_no,
-        trim(facility_name) as facility_name,
-        trim(item_id) as item_id,
-        trim(item_description) as item_description
+        {{ clean_upper('invoice_uom') }} as invoice_uom,
+        {{ clean_string('item_id') }} as item_id,
+        {{ clean_string('vendor_code') }} as vendor_code
     from raw_source
-    where invoice_number is not null
+    where trim(invoice_number) is not null
+),
+
+final as (
+    select
+        *,
+        {{ append_metadata('invoice_source_file', ['invoice_number', 'invoice_line_number', 'po_number', 'item_id']) }}
+    from cleaned
 )
 
-select
-    *,
-    {{ append_metadata('invoice_source_file', ['invoice_number', 'invoice_line_number', 'po_number', 'po_line_no']) }}
-from cleaned
+select * from final

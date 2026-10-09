@@ -290,7 +290,13 @@ class PipelineOrchestrator:
             """)
 
         # int_item_master_enriched_v4
-        con.execute("""
+        pcm_csv = Path(__file__).resolve().parent.parent.parent / "uc_health" / "seeds" / "product_class_master_1.csv"
+        if not pcm_csv.exists():
+            pcm_csv = data_folder.parent / "uc_health" / "seeds" / "product_class_master_1.csv"
+        
+        pcm_sql = f"select distinct unspsc_code, final_subclass, unspsc_description from read_csv_auto('{pcm_csv}', ignore_errors=True)" if pcm_csv.exists() else "select '' as unspsc_code, '' as final_subclass, '' as unspsc_description where 1=0"
+
+        con.execute(f"""
         CREATE OR REPLACE TABLE int_item_master_enriched_v4 AS
         with item_master as (
             select * from stg_item_master_v4
@@ -329,12 +335,19 @@ class PipelineOrchestrator:
                       or upper(coalesce(im.item_description, '')) like '%IV%' then 'IV & Injection'
                     when im.unspsc_description is not null and trim(im.unspsc_description) != '' then trim(im.unspsc_description)
                     else 'General Medical (Unclassified)'
-                end as custom_category
+                end as custom_category,
+                pcm.final_subclass as pcm_final_subclass,
+                pcm.unspsc_description as pcm_unspsc_description
             from item_master im
+            left join (
+                {pcm_sql}
+            ) pcm on im.unspsc_code = pcm.unspsc_code
         ),
         scored as (
             select
                 c.*,
+                coalesce(c.pcm_final_subclass, 'Unclassified') as product_subclass,
+                coalesce(c.pcm_unspsc_description, c.unspsc_description) as final_unspsc_description,
                 (
                     100 
                     - (case when c.is_missing_vendor_code then 20 else 0 end)
@@ -419,20 +432,63 @@ class PipelineOrchestrator:
             CREATE OR REPLACE VIEW stg_po_v4 AS
             with source as (
                 select * from read_csv('{po_file}', delim='|', header=True, all_varchar=True, null_padding=True, ignore_errors=True)
+            ),
+            cleaned as (
+                select
+                    trim(PO_NUMBER) as po_number,
+                    trim(PO_LINE_NO) as po_line_no,
+                    try_cast(PO_DATE as timestamp) as po_date,
+                    try_cast(PO_LAST_UPDATE_DATE as timestamp) as po_last_update_date,
+                    trim(FACILITY_ENTITY_CODE) as facility_entity_code,
+                    trim(FACILITY_NAME) as facility_name,
+                    trim(CONTRACT_NO) as contract_number,
+                    upper(trim(coalesce(UOM, 'EA'))) as uom,
+                    coalesce(try_cast(UOM_CONV_FACTOR as double), 1.0) as uom_conv_factor,
+                    try_cast(QUANTITY as double) as quantity,
+                    try_cast(UNIT_PRICE as double) as unit_price,
+                    try_cast(TOTAL_VALUE as double) as total_value,
+                    trim(ITEM_ID) as item_id,
+                    trim(ITEM_DESCRIPTION) as item_description,
+                    trim(MANUFACTURE_ERP_ID) as mfr_erp_id,
+                    trim(MANUFACTURE_NAME) as mfr_name,
+                    trim(MANUFACTURER_PART_NUMBER) as mfr_part_number,
+                    trim(VENDOR_CODE) as vendor_code,
+                    trim(VENDOR_NAME) as vendor_name,
+                    trim(VENDOR_PART_NUMBER) as vendor_part_number,
+                    row_number() over (
+                        partition by trim(PO_NUMBER), trim(PO_LINE_NO)
+                        order by try_cast(PO_LAST_UPDATE_DATE as timestamp) desc nulls last
+                    ) as _dedup_rn
+                from source
+                where trim(PO_NUMBER) is not null and trim(PO_LINE_NO) is not null
             )
             select
-                trim(PO_NUMBER) as po_number,
-                trim(PO_LINE_NO) as po_line_no,
-                try_cast(PO_DATE as timestamp) as po_date,
-                trim(ITEM_ID) as item_id,
-                trim(VENDOR_NAME) as vendor_name,
-                try_cast(UNIT_PRICE as double) as unit_price,
-                try_cast(QUANTITY as double) as quantity,
-                try_cast(TOTAL_VALUE as double) as total_value,
-                upper(trim(coalesce(UOM, 'EA'))) as uom,
-                coalesce(try_cast(UOM_CONV_FACTOR as double), 1.0) as uom_conv_factor,
-                trim(FACILITY_NAME) as facility_name
-            from source;
+                po_number,
+                po_line_no,
+                po_date,
+                po_last_update_date,
+                facility_entity_code,
+                facility_name,
+                contract_number,
+                uom,
+                uom_conv_factor,
+                quantity,
+                unit_price,
+                total_value,
+                item_id,
+                item_description,
+                mfr_erp_id,
+                mfr_name,
+                mfr_part_number,
+                vendor_code,
+                vendor_name,
+                vendor_part_number,
+                'UHC_PO_20260930010955.csv' as _source_file,
+                row_number() over () as _source_row_number,
+                md5(concat(coalesce(po_number, ''), coalesce(po_line_no, ''), coalesce(vendor_name, ''), coalesce(item_id, ''))) as _row_hash,
+                current_timestamp as _ingested_at
+            from cleaned
+            where _dedup_rn = 1;
             """)
 
         # Also register vendor_alias_table
@@ -670,6 +726,9 @@ class PipelineOrchestrator:
                     c.log_id,
                     dm.matched_item_id,
                     im_ref.unspsc_code as mapped_unspsc,
+                    im_ref.unspsc_code as im_unspsc,
+                    im_ref.product_subclass,
+                    im_ref.final_unspsc_description as unspsc_description,
                     coalesce(dm.im_match_tier, 99) as im_match_tier,
                     coalesce(dm.im_match_rule, 'no_match') as im_match_rule,
                     coalesce(dm.im_match_confidence_score, 0.0) as im_match_confidence_score,
@@ -810,6 +869,9 @@ class PipelineOrchestrator:
                         c.*,
                         im.matched_item_id,
                         im.mapped_unspsc,
+                        im.im_unspsc,
+                        im.product_subclass,
+                        im.unspsc_description,
                         im.im_match_tier,
                         im.im_match_rule,
                         im.is_item_master_matched,
@@ -821,6 +883,8 @@ class PipelineOrchestrator:
                         con.mapped_contract_ea_price,
                         con.contract_uom,
                         con.item_contract_category,
+                        con.contract_start_date,
+                        con.contract_end_date,
                         con.contract_match_tier,
                         con.contract_match_rule,
                         con.is_contract_matched,
@@ -868,29 +932,35 @@ class PipelineOrchestrator:
             },
             {
                 "name": "int_drg_mapping_v4",
-                "sql": """
+                "sql": f"""
                 CREATE OR REPLACE TABLE int_drg_mapping_v4 AS
                 with distinct_drg as (
                     select distinct drg_code, primary_procedure
                     from int_consumption_normalized_v4
                     where drg_code is not null or primary_procedure is not null
+                ),
+                cortex_map as (
+                    select distinct
+                        raw_drg_code,
+                        raw_procedure,
+                        standardized_procedure,
+                        primary_drg_code,
+                        procedure_group
+                    from read_parquet('{self.output_dir / "drg_procedure_mapping_v4.parquet"}')
                 )
                 select
-                    drg_code,
-                    primary_procedure,
-                    split_part(coalesce(drg_code, ''), '|', 1) as primary_drg_code,
-                    case
-                        when upper(coalesce(primary_procedure, '')) like '%KNEE%' or upper(coalesce(primary_procedure, '')) like '%HIP%' or upper(coalesce(primary_procedure, '')) like '%ARTHROPLASTY%' then 'Orthopedic Reconstruction'
-                        when upper(coalesce(primary_procedure, '')) like '%SPINE%' or upper(coalesce(primary_procedure, '')) like '%FUSION%' then 'Spinal Surgery'
-                        when upper(coalesce(primary_procedure, '')) like '%CORONARY%' or upper(coalesce(primary_procedure, '')) like '%VALVE%' or upper(coalesce(primary_procedure, '')) like '%CARDIAC%' then 'Cardiovascular Surgery'
-                        when upper(coalesce(primary_procedure, '')) like '%COLON%' or upper(coalesce(primary_procedure, '')) like '%BOWEL%' or upper(coalesce(primary_procedure, '')) like '%HERNIA%' then 'General & Colorectal Surgery'
-                        when upper(coalesce(primary_procedure, '')) like '%NEURO%' or upper(coalesce(primary_procedure, '')) like '%BRAIN%' or upper(coalesce(primary_procedure, '')) like '%CRANIAL%' then 'Neurosurgery'
-                        else 'General Clinical Procedure'
-                    end as primary_procedure_group,
-                    'v4_pipeline_rule_engine' as llm_model_used,
-                    'v4.0' as llm_prompt_version,
+                    d.drg_code,
+                    d.primary_procedure,
+                    coalesce(m.standardized_procedure, d.primary_procedure) as standardized_procedure,
+                    coalesce(m.primary_drg_code, split_part(coalesce(d.drg_code, ''), ',', 1)) as primary_drg_code,
+                    coalesce(m.procedure_group, 'General Surgery') as primary_procedure_group,
+                    'llama3.3-70b-cortex' as llm_model_used,
+                    'v4.1' as llm_prompt_version,
                     current_timestamp as llm_generated_at
-                from distinct_drg;
+                from distinct_drg d
+                left join cortex_map m 
+                    on coalesce(d.drg_code, '') = coalesce(m.raw_drg_code, '')
+                    and coalesce(d.primary_procedure, '') = coalesce(m.raw_procedure, '');
                 """
             },
             {
@@ -913,6 +983,7 @@ class PipelineOrchestrator:
                         current_timestamp as ingested_at_timestamp,
                         d.primary_drg_code,
                         d.primary_procedure_group,
+                        d.standardized_procedure,
                         round(
                             case 
                                 when coalesce(try_cast(c.contract_price as double), 0) > 0 then
@@ -946,7 +1017,19 @@ class PipelineOrchestrator:
                         case 
                             when e.is_contract_matched and abs(coalesce(e.price_variance2, 0.0)) <= 0.005 * coalesce(e.line_spend, 1.0) then true
                             else false
-                        end as is_contract_compliant
+                        end as is_contract_compliant,
+                        e.contract_start_date as contract_start,
+                        e.contract_end_date as contract_end,
+                        case when e.item_uom = e.contract_uom then 'Y' else 'N' end as contract_uom_matches_po_uom,
+                        case when e.is_contract_matched then 'On contract' else 'Off contract' end as contract_status,
+                        case when e.is_contract_matched then 'Y' else 'N' end as has_current_contract,
+                        current_date as current_contract_as_of,
+                        e.contract_number as current_contract_number,
+                        e.contract_price as current_contract_price,
+                        e.contract_uom as current_contract_uom,
+                        e.contract_start_date as current_contract_start,
+                        e.contract_end_date as current_contract_end,
+                        case when e.item_uom = e.contract_uom then 'Y' else 'N' end as current_contract_uom_matches_po_uom
                     from enriched e
                 )
                 select * from calculated;
@@ -987,6 +1070,8 @@ class PipelineOrchestrator:
                         c.contract_price as matched_contract_price,
                         c.contract_ea_price as matched_contract_ea_price,
                         c.contract_uom as matched_contract_uom,
+                        c.contract_start_date as matched_contract_start_date,
+                        c.contract_end_date as matched_contract_end_date,
                         c.contract_category,
                         row_number() over (
                             partition by p.po_number, p.po_line_no
@@ -1006,6 +1091,9 @@ class PipelineOrchestrator:
                         '{batch_id}' as client_ingestion_batch_id,
                         current_timestamp as ingested_at_timestamp,
                         im.custom_category as product_class,
+                        im.product_subclass,
+                        im.final_unspsc_description as unspsc_description,
+                        im.unspsc_code as im_unspsc,
                         im.data_quality_score,
                         ia.invoice_count,
                         ia.total_invoiced_qty,
@@ -1043,7 +1131,21 @@ class PipelineOrchestrator:
                         case 
                             when j.is_contract_matched and abs(coalesce(j.price_variance2, 0.0)) <= 0.005 * coalesce(j.total_value, 1.0) then true
                             else false
-                        end as is_contract_compliant
+                        end as is_contract_compliant,
+                        j.matched_contract_price as contract_price,
+                        j.matched_contract_start_date as contract_start,
+                        j.matched_contract_end_date as contract_end,
+                        j.matched_contract_uom as contract_uom,
+                        case when j.uom = j.matched_contract_uom then 'Y' else 'N' end as contract_uom_matches_po_uom,
+                        case when j.is_contract_matched then 'On contract' else 'Off contract' end as contract_status,
+                        case when j.is_contract_matched then 'Y' else 'N' end as has_current_contract,
+                        current_date as current_contract_as_of,
+                        j.matched_contract_number as current_contract_number,
+                        j.matched_contract_price as current_contract_price,
+                        j.matched_contract_uom as current_contract_uom,
+                        j.matched_contract_start_date as current_contract_start,
+                        j.matched_contract_end_date as current_contract_end,
+                        case when j.uom = j.matched_contract_uom then 'Y' else 'N' end as current_contract_uom_matches_po_uom
                     from joined j
                 )
                 select * from finalized;

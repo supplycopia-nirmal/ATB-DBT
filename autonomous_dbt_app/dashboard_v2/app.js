@@ -831,18 +831,78 @@ async function confirmJoinsAndProceed() {
     "🤝",
     async () => {
       try {
+        const btn = document.querySelector('#stage-joins button.btn-success');
+        if (btn) {
+          btn.disabled = true;
+          btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> ⚙️ Synthesizing Models...';
+        }
+
+        // Auto-expand live Bee Swarms Stream to provide immediate visibility
+        const accordion = document.getElementById('bee-accordion');
+        if (accordion && accordion.classList.contains('collapsed')) {
+          toggleBeeAccordion();
+        }
+
+        showToast("Topology Approved", "Multi-tier join graph locked. Synthesizing models...", "info");
         const res = await fetch('/api/confirm_joins', { method: 'POST' });
         const data = await res.json();
-        showToast("Topology Approved", "DBT Compilation dispatched.", "success");
+        
+        showToast("Swarm Dispatched", "DBT Compilation executing across Staging, Intermediate, & Marts.", "success");
         addNotification("HITL Checkpoint Approved", "Operator approved join rules and initiated model generation");
         switchStage('lineage');
-        executeDbtPipeline();
+        await executeDbtPipeline();
       } catch (err) {
         showToast("Error", err.message, "error");
+      } finally {
+        const btn = document.querySelector('#stage-joins button.btn-success');
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = '✓ Confirm &amp; Proceed';
+        }
       }
     },
     true
   );
+}
+
+// Stage 6 Audit Approval & Pipeline Certification
+async function approvePipelineAudit() {
+  const btn = document.getElementById('btn-approve-audit');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '⚙️ Certifying...';
+  }
+
+  try {
+    const res = await fetch('/api/approve_audit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    const data = await res.json();
+    if (res.ok && data.status === 'SUCCESS') {
+      showToast("Pipeline Certified", "Stage 6 Audit approved. Pipeline status is now AUDITED_CERTIFIED.", "success");
+      addNotification("Audit Approved", "Operator certified mathematical Golden Parity and pipeline test suite.");
+      if (btn) {
+        btn.innerHTML = '✅ Pipeline Certified';
+        btn.classList.remove('btn-success');
+        btn.classList.add('btn-secondary');
+        btn.disabled = true;
+      }
+      pollPipelineStatus();
+    } else {
+      showToast("Certification Error", data.message || "Failed to certify pipeline", "error");
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '✅ Approve Audit &amp; Certify Pipeline';
+      }
+    }
+  } catch (err) {
+    showToast("Error", err.message, "error");
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '✅ Approve Audit &amp; Certify Pipeline';
+    }
+  }
 }
 
 // Pipeline Compilation & Execution

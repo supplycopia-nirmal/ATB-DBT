@@ -4,23 +4,23 @@ with raw_source as (
 
 cleaned as (
     select
-        trim(contract_number) as contract_number,
-        trim(contract_description) as contract_description,
+        {{ clean_string('contract_number') }} as contract_number,
+        {{ clean_string('contract_description') }} as contract_description,
         {{ safe_cast('contract_start', 'timestamp') }} as contract_start_date,
         {{ safe_cast('contract_end', 'timestamp') }} as contract_end_date,
-        upper(trim(contract_uom)) as contract_uom,
+        {{ clean_upper('contract_uom') }} as contract_uom,
         {{ safe_cast('contract_qoe', 'integer') }} as contract_qoe,
         {{ safe_cast('contract_price', 'double') }} as contract_price,
         {{ safe_cast('contract_ea_price', 'double') }} as contract_ea_price,
-        trim(item_id) as item_id,
-        trim(item_description) as item_description,
-        trim(manufacturer_part_number) as manufacturer_part_number,
-        trim(manufacture_name) as manufacture_name,
-        trim(vendor_name) as vendor_name,
-        trim(contract_category) as contract_category,
+        {{ clean_string('item_id') }} as item_id,
+        {{ clean_string('item_description') }} as item_description,
+        {{ clean_string('manufacturer_part_number') }} as manufacturer_part_number,
+        {{ clean_string('manufacture_name') }} as manufacture_name,
+        {{ clean_upper('vendor_name') }} as vendor_name,
+        {{ clean_string('contract_category') }} as contract_category,
         {{ safe_cast('list_price', 'double') }} as list_price,
-        trim(pricing_tier) as pricing_tier,
-        trim(tier_requirements) as tier_requirements
+        {{ clean_string('pricing_tier') }} as pricing_tier,
+        {{ clean_string('tier_requirements') }} as tier_requirements
     from raw_source
     where trim(contract_number) is not null
       and trim(item_id) is not null
