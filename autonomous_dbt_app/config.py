@@ -42,5 +42,5 @@ CHROMA_PERSIST_DIR = ROOT_DIR / "agent_memory" / "chroma_db"
 STATE_FILE = ROOT_DIR / "agent_memory" / "pipeline_state.json"
 
 # SupplyCopia Canonical Required vs Optional Entities
-REQUIRED_ENTITIES = ["consumption", "purchase_order"]
-OPTIONAL_ENTITIES = ["item_master", "contracts", "invoice", "inventory", "vendor_alias", "facility_mapping"]
+REQUIRED_ENTITIES = ["consumption", "purchase_orders", "purchase_order"]
+OPTIONAL_ENTITIES = ["item_master", "contracts", "invoices", "invoice", "inventory", "vendor_alias", "facility_mapping"]

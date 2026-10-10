@@ -1195,23 +1195,33 @@ class PipelineOrchestrator:
             },
             {
                 "name": "sc_multi_tenant_consumption_savings",
-                "sql": """
+                "sql": f"""
                 CREATE OR REPLACE TABLE sc_multi_tenant_consumption_savings AS
-                SELECT * FROM fct_consumption_cost_savings_v4;
+                SELECT 
+                    concat('{client_id}', '_', cast(log_id as varchar)) as tenant_log_id,
+                    concat('{client_id}', '_', cast(row_id as varchar)) as tenant_row_id,
+                    * 
+                FROM fct_consumption_cost_savings_v4;
                 """
             },
             {
                 "name": "sc_multi_tenant_po_savings",
-                "sql": """
+                "sql": f"""
                 CREATE OR REPLACE TABLE sc_multi_tenant_po_savings AS
-                SELECT * FROM fct_po_cost_savings_v4;
+                SELECT 
+                    concat('{client_id}', '_', cast(po_number as varchar), '_', cast(po_line_no as varchar)) as tenant_po_line_id,
+                    * 
+                FROM fct_po_cost_savings_v4;
                 """
             },
             {
                 "name": "sc_multi_tenant_gap_analysis",
-                "sql": """
+                "sql": f"""
                 CREATE OR REPLACE TABLE sc_multi_tenant_gap_analysis AS
-                SELECT * FROM fct_gap_analysis_v4;
+                SELECT 
+                    concat('{client_id}', '_', coalesce(primary_procedure_group, 'UNK'), '_', coalesce(service_line, 'GEN')) as tenant_gap_id,
+                    * 
+                FROM fct_gap_analysis_v4;
                 """
             }
         ]

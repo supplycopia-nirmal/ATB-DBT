@@ -834,6 +834,157 @@ body {
   outline: none;
 }
 
+/* Chat Lightbox Maximize Mode */
+.chat-window.lightbox {
+  position: fixed !important;
+  top: 24px !important;
+  left: 24px !important;
+  right: 24px !important;
+  bottom: 24px !important;
+  width: auto !important;
+  height: auto !important;
+  max-width: none !important;
+  max-height: none !important;
+  z-index: 10000 !important;
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.95), 0 0 0 1000px rgba(5, 10, 20, 0.7) !important;
+  border-radius: 14px;
+}
+
+.chat-window.lightbox .chat-header {
+  padding: 14px 20px;
+  font-size: 15px;
+}
+
+.chat-window.lightbox .chat-messages {
+  padding: 20px 24px;
+  font-size: 13px;
+}
+
+.chat-window.lightbox .chat-bubble {
+  max-width: 85%;
+  font-size: 13px;
+}
+
+.chat-window.lightbox .chat-input-bar {
+  padding: 14px 20px;
+}
+
+.chat-window.lightbox .chat-input-bar input {
+  font-size: 13px;
+  padding: 10px 14px;
+}
+
+/* Chat Starter & Follow-up Suggestions */
+.chat-starter-pill {
+  background: #0f172a;
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  color: #e2e8f0;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: block;
+  width: 100%;
+}
+.chat-starter-pill:hover {
+  background: rgba(56, 189, 248, 0.15);
+  border-color: #38bdf8;
+  color: #fff;
+  transform: translateX(2px);
+}
+
+.chat-suggestions-box {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.chat-suggestion-chip {
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px dashed rgba(56, 189, 248, 0.4);
+  color: #38bdf8;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.chat-suggestion-chip:hover {
+  background: rgba(56, 189, 248, 0.2);
+  border-color: #38bdf8;
+  color: #fff;
+}
+
+/* Chat Feedback Bar */
+.chat-feedback-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.chat-feedback-btn {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 11px;
+  cursor: pointer;
+  color: #94a3b8;
+  transition: all 0.15s;
+}
+.chat-feedback-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+.chat-feedback-btn.active-up {
+  background: rgba(16, 185, 129, 0.2);
+  border-color: #10b981;
+  color: #34d399;
+}
+.chat-feedback-btn.active-down {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: #ef4444;
+  color: #f87171;
+}
+
+/* In-Chat Chart Canvas Container */
+.chat-chart-card {
+  background: #090e1a;
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  border-radius: 8px;
+  padding: 12px;
+  margin: 10px 0;
+  position: relative;
+  max-width: 100%;
+}
+.chat-chart-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #38bdf8;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.chat-chart-container {
+  position: relative;
+  width: 100%;
+  height: 220px;
+}
+
 /* App Layout & Saved Pipelines Sidebar */
 .app-layout {
   display: flex;

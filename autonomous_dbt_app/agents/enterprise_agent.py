@@ -166,14 +166,15 @@ class EnterpriseAgent:
             "assertions": anomalies
         }
 
-    def generate_git_bundle(self, repo_url: str = "https://github.com/supplycopia/dbt-client-pipelines.git") -> Dict[str, Any]:
+    def generate_git_bundle(self, repo_url: str = "https://github.com/supplycopia-nirmal/ATB-DBT.git", client_id: str = "uc_health") -> Dict[str, Any]:
         """Prepares a Git CI/CD synchronization payload for automated repository deployment."""
-        branch_name = f"clients/uc_health_v4_release_{datetime.now().strftime('%Y%m%d')}"
+        branch_name = f"clients/{client_id}_v4_release_{datetime.now().strftime('%Y%m%d')}"
         return {
             "status": "READY_TO_SYNC",
             "repository": repo_url,
             "target_branch": branch_name,
-            "commit_message": "chore(dbt): autonomous pipeline generation v4 - 100% Golden Parity verified",
+            "client_directory": f"clients/{client_id}/",
+            "commit_message": f"chore(dbt): autonomous pipeline generation v4 for {client_id} - 100% Golden Parity verified",
             "author": "Worker Bee Stitch <agent-bee@supplycopia.internal>",
             "artifacts_included": [
                 "dbt_project.yml",

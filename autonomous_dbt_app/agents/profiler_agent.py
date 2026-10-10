@@ -248,11 +248,11 @@ class ProfilerAgent:
         if any(k in fname for k in ["CONSUMPTION", "SPEND", "USAGE", "UTILIZATION"]):
             return "consumption"
         if any(k in fname for k in ["PURCHASE_ORDER", "_PO_", "PO_2", "PURCHASE_ORDERS", "PO."]):
-            return "purchase_order"
+            return "purchase_orders"
         if any(k in fname for k in ["ITEM_MASTER", "ITEMMASTER", "IM_2", "PRODUCT_CATALOG", "ITEMS"]):
             return "item_master"
         if any(k in fname for k in ["INVOICE", "AP_INV", "INV_2", "ACCOUNTS_PAYABLE"]):
-            return "invoice"
+            return "invoices"
         if any(k in fname for k in ["INVENTORY", "STOCK", "ON_HAND", "INV_LEVEL"]):
             return "inventory"
         if any(k in fname for k in ["VENDOR_ALIAS", "SUPPLIER_MAPPING", "ALIAS"]):
@@ -266,10 +266,10 @@ class ProfilerAgent:
         if any(c in col_names for c in ["LOG_ID", "ADMIT_DATE_TIME", "SURGICAL_HIERARCHY", "DRG_CODE", "TX_ID"]):
             return "consumption"
         if any(c in col_names for c in ["PO_NUMBER", "PO_LINE_NO", "ORDER_DATE", "LINE_NBR"]):
-            return "purchase_order"
+            return "purchase_orders"
         if any(c in col_names for c in ["ITEM_ID", "MFR_PART_NUMBER", "UNSPSC_CODE", "ITEM_DESCRIPTION"]):
             return "item_master"
         if any(c in col_names for c in ["INVOICE_NUMBER", "INVOICE_QTY", "INVOICE_PAID_DATE"]):
-            return "invoice"
+            return "invoices"
 
         return "UNKNOWN"

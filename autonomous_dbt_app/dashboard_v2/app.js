@@ -524,6 +524,10 @@ async function loadRawProfile() {
         }
       }
 
+      // Normalize singular forms to plural dropdown options
+      if (detectedEntity === 'purchase_order') detectedEntity = 'purchase_orders';
+      if (detectedEntity === 'invoice') detectedEntity = 'invoices';
+
       const isSelected = f.selected_for_pipeline !== false;
       const rowCountDisplay = f.total_row_count ? Number(f.total_row_count).toLocaleString() : (f.sample_row_count || 0).toLocaleString();
       const rawSpendBadge = f.total_spend_value ? `<span class="badge badge-success" style="font-size: 11px;">Spend: ${formatCurrency(f.total_spend_value)}</span>` : '';
@@ -1448,12 +1452,15 @@ async function loadEnterpriseData(tab) {
     const cont = document.getElementById('ent-git-content');
     cont.className = '';
     cont.innerHTML = `
-      <div style="background:#090e1a; padding:12px; border-radius:8px; border:1px solid var(--border-color); font-size:12px;">
-        <div>Target Branch: <code>${data.target_branch}</code></div>
-        <div style="margin:6px 0;">Commit Message: <em>${data.commit_message}</em></div>
-        <div>Author: ${data.author}</div>
+      <div style="background:#090e1a; padding:14px; border-radius:8px; border:1px solid var(--border-color); font-size:12px;">
+        <div style="margin-bottom:6px;"><strong>GitHub Repository:</strong> <a href="${data.repository}" target="_blank" style="color:#38bdf8; text-decoration:none;">${data.repository}</a></div>
+        <div style="margin-bottom:6px;"><strong>Client Isolated Directory:</strong> <code style="color:#34d399;">${data.client_directory || 'clients/uc_health/'}</code></div>
+        <div style="margin-bottom:6px;"><strong>Target Deployment Branch:</strong> <code>${data.target_branch}</code></div>
+        <div style="margin-bottom:6px;"><strong>CI/CD Runner:</strong> <span class="badge badge-primary">GitHub Actions (dbt compile &amp; test)</span></div>
+        <div style="margin-bottom:6px;"><strong>Commit Message:</strong> <em>${data.commit_message}</em></div>
+        <div><strong>Author:</strong> ${data.author}</div>
       </div>
-      <h5 style="margin:12px 0 6px 0;">Tracked Models & Artifacts (${data.artifacts_included.length}):</h5>
+      <h5 style="margin:14px 0 6px 0;">Tracked Models &amp; Artifacts for Tenant (${data.artifacts_included.length}):</h5>
       <pre class="code-box" style="max-height:160px; overflow-y:auto;">${data.artifacts_included.join('\n')}</pre>
     `;
   } else if (tab === 'rls') {
@@ -1538,12 +1545,34 @@ async function loadSwarmStream() {
   }
 }
 
-// Ask The Bee Floating Chat
+// Ask The Bee Floating Chat & Lightbox
 function toggleChatWindow() {
   const win = document.getElementById('chat-window');
   win.classList.toggle('open');
   if (win.classList.contains('open')) {
     document.getElementById('chat-user-input')?.focus();
+  }
+}
+
+function toggleChatLightbox() {
+  const win = document.getElementById('chat-window');
+  const btn = document.getElementById('chat-lightbox-btn');
+  if (!win) return;
+  win.classList.toggle('lightbox');
+  if (win.classList.contains('lightbox')) {
+    if (btn) btn.innerHTML = '🗗';
+    if (btn) btn.title = 'Collapse Lightbox';
+  } else {
+    if (btn) btn.innerHTML = '⛶';
+    if (btn) btn.title = 'Expand / Lightbox Fullscreen';
+  }
+}
+
+function sendQuickPrompt(promptText) {
+  const input = document.getElementById('chat-user-input');
+  if (input) {
+    input.value = promptText;
+    sendChatMessage();
   }
 }
 
@@ -1578,6 +1607,7 @@ async function sendChatMessage() {
     const botDiv = document.createElement('div');
     botDiv.className = 'chat-bubble bot';
     botDiv.id = botBubbleId;
+    botDiv.dataset.msgId = data.message_id || botBubbleId;
 
     if (data.delegated_bee) {
       const badge = document.createElement('div');
@@ -1597,6 +1627,11 @@ async function sendChatMessage() {
     const fullText = data.reply || 'Swarm processed your request.';
     await streamText(contentDiv, fullText, msgBox);
 
+    // If Chart specification returned, render interactive Chart.js canvas
+    if (data.chart) {
+      renderChatChart(botDiv, data.chart);
+    }
+
     // Append Interactive Action Chips if provided
     if (data.action_chips && data.action_chips.length > 0) {
       const actionsDiv = document.createElement('div');
@@ -1609,12 +1644,157 @@ async function sendChatMessage() {
         actionsDiv.appendChild(btn);
       });
       botDiv.appendChild(actionsDiv);
-      msgBox.scrollTop = msgBox.scrollHeight;
     }
+
+    // Append 2 Contextual Follow-Up Suggestions
+    if (data.suggested_questions && data.suggested_questions.length > 0) {
+      const suggBox = document.createElement('div');
+      suggBox.className = 'chat-suggestions-box';
+      const suggTitle = document.createElement('div');
+      suggTitle.style.cssText = 'font-size: 10px; color: #94a3b8; font-weight: 600; margin-bottom: 2px;';
+      suggTitle.textContent = '💡 Follow-up suggestions:';
+      suggBox.appendChild(suggTitle);
+
+      data.suggested_questions.slice(0, 2).forEach(q => {
+        const chip = document.createElement('button');
+        chip.className = 'chat-suggestion-chip';
+        chip.innerHTML = `<span>👉</span> <span>${escapeHtml(q)}</span>`;
+        chip.onclick = () => sendQuickPrompt(q);
+        suggBox.appendChild(chip);
+      });
+      botDiv.appendChild(suggBox);
+    }
+
+    // Append Thumbs Up / Thumbs Down Feedback Widget
+    const feedbackBar = document.createElement('div');
+    feedbackBar.className = 'chat-feedback-bar';
+    feedbackBar.innerHTML = `
+      <span>Was this helpful?</span>
+      <button class="chat-feedback-btn" onclick="rateChatMessage('${data.message_id || botBubbleId}', 'up', this)" title="Accurate & helpful">👍</button>
+      <button class="chat-feedback-btn" onclick="rateChatMessage('${data.message_id || botBubbleId}', 'down', this)" title="Incorrect or needs fix">👎</button>
+    `;
+    botDiv.appendChild(feedbackBar);
+
+    msgBox.scrollTop = msgBox.scrollHeight;
 
   } catch (err) {
     document.getElementById(loadingId)?.remove();
     msgBox.innerHTML += `<div class="chat-bubble bot" style="color: #ef4444;">❌ Error communicating with Ask The Bee: ${err.message}</div>`;
+  }
+}
+
+// Chart.js Visualizer in Chat
+function renderChatChart(parentEl, chartSpec) {
+  const card = document.createElement('div');
+  card.className = 'chat-chart-card';
+
+  if (chartSpec.title) {
+    const titleEl = document.createElement('div');
+    titleEl.className = 'chat-chart-title';
+    titleEl.innerHTML = `📊 <span>${escapeHtml(chartSpec.title)}</span>`;
+    card.appendChild(titleEl);
+  }
+
+  const container = document.createElement('div');
+  container.className = 'chat-chart-container';
+  const canvas = document.createElement('canvas');
+  const chartId = 'chart-canvas-' + Date.now();
+  canvas.id = chartId;
+  container.appendChild(canvas);
+  card.appendChild(container);
+  parentEl.appendChild(card);
+
+  try {
+    new Chart(canvas, {
+      type: chartSpec.type || 'bar',
+      data: {
+        labels: chartSpec.labels || [],
+        datasets: chartSpec.datasets || []
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            labels: { color: '#cbd5e1', font: { size: 11 } }
+          }
+        },
+        scales: chartSpec.type === 'doughnut' || chartSpec.type === 'pie' ? {} : {
+          x: {
+            ticks: { color: '#94a3b8', font: { size: 10 } },
+            grid: { color: 'rgba(255,255,255,0.05)' }
+          },
+          y: {
+            ticks: { color: '#94a3b8', font: { size: 10 } },
+            grid: { color: 'rgba(255,255,255,0.05)' }
+          }
+        }
+      }
+    });
+  } catch (ex) {
+    console.error('Failed to initialize Chart.js:', ex);
+  }
+}
+
+// Thumbs Up / Down Feedback & Self-Healing
+let activeFeedbackMsgId = null;
+let activeFeedbackBtn = null;
+
+async function rateChatMessage(msgId, vote, btnEl) {
+  if (vote === 'up') {
+    btnEl.classList.add('active-up');
+    btnEl.parentElement.querySelectorAll('.chat-feedback-btn').forEach(b => { if (b !== btnEl) b.disabled = true; });
+    try {
+      await fetch('/api/chat_feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message_id: msgId, rating: 'up', reason: 'User confirmed helpful' })
+      });
+      showToast("Thank You!", "Feedback logged to reinforce positive AI patterns.", "success");
+    } catch (e) {}
+  } else {
+    // Open feedback diagnosis modal
+    activeFeedbackMsgId = msgId;
+    activeFeedbackBtn = btnEl;
+    const modal = document.getElementById('modal-chat-feedback');
+    if (modal) modal.style.display = 'block';
+  }
+}
+
+function closeChatFeedbackModal() {
+  const modal = document.getElementById('modal-chat-feedback');
+  if (modal) modal.style.display = 'none';
+  activeFeedbackMsgId = null;
+  activeFeedbackBtn = null;
+}
+
+async function submitChatFeedback() {
+  const reasonRadio = document.querySelector('input[name="feedback_reason"]:checked');
+  const reason = reasonRadio ? reasonRadio.value : 'Inaccurate data';
+  const comment = document.getElementById('chat-feedback-comment')?.value || '';
+
+  if (activeFeedbackBtn) {
+    activeFeedbackBtn.classList.add('active-down');
+    activeFeedbackBtn.parentElement.querySelectorAll('.chat-feedback-btn').forEach(b => { if (b !== activeFeedbackBtn) b.disabled = true; });
+  }
+
+  try {
+    const res = await fetch('/api/chat_feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message_id: activeFeedbackMsgId,
+        rating: 'down',
+        reason: reason,
+        comment: comment
+      })
+    });
+    const data = await res.json();
+    closeChatFeedbackModal();
+    showToast("Feedback Logged", "Ask The Bee swarm memory has adjusted for self-healing.", "info");
+    addNotification("Swarm Self-Healing", `Recalibrated bot prompt based on feedback: ${reason}`);
+  } catch (err) {
+    showToast("Submission Failed", err.message, "error");
   }
 }
 
@@ -1735,18 +1915,31 @@ async function clearChatHistory() {
   if (msgBox) {
     msgBox.innerHTML = `
       <div class="chat-bubble bot">
-        👋 Conversation reset. Memory store cleared. Ask me anything about your datasets, join cascades, or clinical procedure savings.
+        👋 Conversation reset. Memory store and swarm stream cleared. Ask me anything about your datasets, join cascades, or clinical procedure savings.
+        <div class="chat-starters-grid" style="margin-top: 10px; display: flex; flex-direction: column; gap: 6px;">
+          <div style="font-size: 11px; color: #94a3b8; font-weight: 600;">💡 Suggested Questions to get started:</div>
+          <button class="chat-starter-pill" onclick="sendQuickPrompt('Show top savings opportunities as a chart')">📊 Show top savings opportunities as a chart</button>
+          <button class="chat-starter-pill" onclick="sendQuickPrompt('What are the 4-tier item matching cascades and current coverage?')">🎯 What are the 4-tier item matching cascades and current coverage?</button>
+          <button class="chat-starter-pill" onclick="sendQuickPrompt('Explain Price Variance Spike (>50% Above Contract) anomalies')">⚠️ Explain Price Variance Spike (>50% Above Contract) anomalies</button>
+          <button class="chat-starter-pill" onclick="sendQuickPrompt('How does the multi-tenant RLS policy isolate UC Health in Snowflake?')">❄️ How does the multi-tenant RLS policy isolate UC Health in Snowflake?</button>
+        </div>
       </div>
     `;
   }
   const input = document.getElementById('chat-user-input');
   if (input) input.value = '';
 
+  // Clear live swarm stream widget
+  const streamBox = document.getElementById('swarm-events-stream');
+  if (streamBox) {
+    streamBox.innerHTML = '<div class="loading">Listening for Bee Swarms... (Stream reset)</div>';
+  }
+
   try {
     const res = await fetch('/api/clear_chat', { method: 'POST' });
     const data = await res.json();
     if (res.ok) {
-      showToast("Chat Cleared", "Chat history and memory have been reset.", "success");
+      showToast("Chat & Stream Reset", "Chat history and swarm stream events have been cleared.", "success");
       addNotification("Conversation Reset", "Operator initiated fresh chat session.");
     }
   } catch (err) {

@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="style.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
   <div class="app-layout">
@@ -455,15 +456,15 @@
         <div class="sf-config-grid">
           <div class="form-group">
             <label>Target Database</label>
-            <input type="text" id="sf-db-input" value="SUPPLYCOPIA_SANDBOX">
+            <input type="text" id="sf-db-input" value="SUPPLYCOPIA_TRANSFORM">
           </div>
           <div class="form-group">
             <label>Target Schema</label>
-            <input type="text" id="sf-schema-input" value="RAW_ANALYTICS">
+            <input type="text" id="sf-schema-input" value="SCRETAIL_IMPORT">
           </div>
           <div class="form-group">
             <label>Target Warehouse</label>
-            <input type="text" id="sf-wh-input" value="COMPUTE_WH">
+            <input type="text" id="sf-wh-input" value="DATAMANAGEMENT_WH">
           </div>
         </div>
 
@@ -741,20 +742,53 @@
       <div style="display: flex; align-items: center; gap: 8px;">
         <span>🐝</span>
         <span>Ask The Bee AI Assistant</span>
+        <span class="badge badge-success" style="font-size: 10px; padding: 2px 6px;">Multi-Agent</span>
       </div>
-      <div style="display: flex; align-items: center; gap: 8px;">
-        <button class="btn btn-secondary btn-sm" onclick="clearChatHistory()" style="padding: 2px 8px; font-size: 11px;" title="Clear conversation & reset memory">🧹 Clear Chat</button>
-        <span style="cursor: pointer; font-size: 18px;" onclick="toggleChatWindow()">&times;</span>
+      <div style="display: flex; align-items: center; gap: 6px;">
+        <button class="btn btn-secondary btn-sm" onclick="clearChatHistory()" style="padding: 2px 8px; font-size: 11px;" title="Clear conversation & reset memory">🧹 Clear</button>
+        <button id="chat-lightbox-btn" class="btn-icon" onclick="toggleChatLightbox()" title="Expand / Lightbox Fullscreen" style="font-size: 14px; padding: 2px 6px; color: #94a3b8; cursor: pointer;">⛶</button>
+        <span style="cursor: pointer; font-size: 18px; line-height: 1;" onclick="toggleChatWindow()" title="Close chat">&times;</span>
       </div>
     </div>
     <div id="chat-messages" class="chat-messages">
       <div class="chat-bubble bot">
-        👋 Hello! I am <strong>Ask The Bee</strong>. You can ask me questions about your dataset schemas, join rules, clinical procedure savings, or request pipeline reconfigurations. How can I assist you?
+        👋 Hello! I am <strong>Ask The Bee</strong>. You can ask me questions about your dataset schemas, join rules, clinical procedure savings, or request visual charts and pipeline reconfigurations. How can I assist you?
+        <div class="chat-starters-grid" style="margin-top: 10px; display: flex; flex-direction: column; gap: 6px;">
+          <div style="font-size: 11px; color: #94a3b8; font-weight: 600;">💡 Suggested Questions to get started:</div>
+          <button class="chat-starter-pill" onclick="sendQuickPrompt('Show top savings opportunities as a chart')">📊 Show top savings opportunities as a chart</button>
+          <button class="chat-starter-pill" onclick="sendQuickPrompt('What are the 4-tier item matching cascades and current coverage?')">🎯 What are the 4-tier item matching cascades and current coverage?</button>
+          <button class="chat-starter-pill" onclick="sendQuickPrompt('Explain Price Variance Spike (>50% Above Contract) anomalies')">⚠️ Explain Price Variance Spike (>50% Above Contract) anomalies</button>
+          <button class="chat-starter-pill" onclick="sendQuickPrompt('How does the multi-tenant RLS policy isolate UC Health in Snowflake?')">❄️ How does the multi-tenant RLS policy isolate UC Health in Snowflake?</button>
+        </div>
       </div>
     </div>
     <div class="chat-input-bar">
-      <input type="text" id="chat-user-input" placeholder="Ask about joins, models, or data..." onkeydown="handleChatKeyDown(event)">
+      <input type="text" id="chat-user-input" placeholder="Ask about joins, models, charts, or savings..." onkeydown="handleChatKeyDown(event)">
       <button class="btn btn-primary" onclick="sendChatMessage()">Send</button>
+    </div>
+  </div>
+
+  <!-- Negative Feedback Diagnostic Dialog -->
+  <div id="modal-chat-feedback" class="modal" style="z-index: 10050;">
+    <div class="modal-dialog" style="max-width: 480px;">
+      <div class="modal-header">
+        <h3>💬 Help Ask The Bee Self-Heal</h3>
+        <span class="modal-close" onclick="closeChatFeedbackModal()">&times;</span>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 12px; color: #cbd5e1; margin-bottom: 12px;">What was incorrect or unhelpful about this response? Your feedback triggers dynamic swarm recalibration.</p>
+        <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px;">
+          <label style="font-size: 12px; cursor: pointer; color: #e2e8f0;"><input type="radio" name="feedback_reason" value="Factually inaccurate data" checked> Factually inaccurate data / calculations</label>
+          <label style="font-size: 12px; cursor: pointer; color: #e2e8f0;"><input type="radio" name="feedback_reason" value="Missed intent / irrelevant answer"> Missed intent / answered a different question</label>
+          <label style="font-size: 12px; cursor: pointer; color: #e2e8f0;"><input type="radio" name="feedback_reason" value="Formatting / Missing chart or table"> Poor formatting / Missing expected chart or table</label>
+          <label style="font-size: 12px; cursor: pointer; color: #e2e8f0;"><input type="radio" name="feedback_reason" value="Other"> Other (specify below)</label>
+        </div>
+        <textarea id="chat-feedback-comment" class="form-control" rows="3" placeholder="Provide extra context (e.g. 'Use fct_po_cost_savings instead' or 'Group by procedure group')..." style="width: 100%; box-sizing: border-box; background: #090e1a; color: #fff; border: 1px solid var(--border-color); border-radius: 6px; padding: 8px; font-size: 12px;"></textarea>
+      </div>
+      <div class="modal-footer" style="padding: 10px 16px;">
+        <button class="btn btn-secondary btn-sm" onclick="closeChatFeedbackModal()">Cancel</button>
+        <button class="btn btn-primary btn-sm" onclick="submitChatFeedback()">⚡ Submit &amp; Self-Heal</button>
+      </div>
     </div>
   </div>
 
