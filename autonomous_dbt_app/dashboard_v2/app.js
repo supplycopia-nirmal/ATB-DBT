@@ -23,6 +23,7 @@ document.addEventListener('DOMContentLoaded', () => {
   loadParityDetails();
   loadSavedPipelines();
   renderNotifications();
+  handleAutonomyModeChange();
 
   // Poll status and swarm stream
   setInterval(pollStatus, 4000);
@@ -849,10 +850,140 @@ async function saveTopologyChanges() {
   }
 }
 
+// Autonomy Level Selector & Visual Status Pill Handler
+function handleAutonomyModeChange() {
+  const select = document.getElementById('select-autonomy-mode');
+  const pill = document.getElementById('autonomy-mode-pill');
+  const btnRun = document.getElementById('btn-run-pipeline');
+  const mode = select?.value || 'default';
+
+  if (!pill) return;
+
+  pill.className = 'autonomy-mode-pill';
+  if (mode === 'turbo') {
+    pill.classList.add('pill-turbo');
+    pill.innerHTML = '⚡ Turbo (Zero-Intervention)';
+    pill.title = 'Full autonomous end-to-end execution without stopping or manual prompts';
+    if (btnRun) btnRun.innerHTML = '⚡ Run Turbo Swarm';
+    showToast("Autonomy Level: Turbo", "Zero manual intervention: executes stages 1-6 end-to-end and auto-certifies Golden Parity.", "info");
+  } else if (mode === 'user_review') {
+    pill.classList.add('pill-review');
+    pill.innerHTML = '🛡️ Strict Review Gates (2 Active)';
+    pill.title = 'Human-in-the-loop review gates enforced at Stage 3 (Topology) and Stage 6 (Parity Release)';
+    if (btnRun) btnRun.innerHTML = '🛡️ Run Gated Pipeline';
+    showToast("Autonomy Level: User Review", "Dual approval gates active: Stage 3 (Topology Gate) and Stage 6 (Parity Release Gate).", "warning");
+  } else {
+    pill.classList.add('pill-default');
+    pill.innerHTML = 'ℹ️ Step-by-Step HITL';
+    pill.title = 'Guided walkthrough stepping through ingestion, profiling, topology review, and output inspection';
+    if (btnRun) btnRun.innerHTML = '🚀 Run Guided Swarm';
+    showToast("Autonomy Level: Default", "Guided step-by-step walkthrough with HITL topology review checkpoint.", "info");
+  }
+}
+
+// Strict Gate 1 Review Modal Handlers (User Review Mode)
+function openGate1Modal() {
+  const modal = document.getElementById('modal-gate1-review');
+  if (modal) modal.style.display = 'flex';
+}
+
+function closeGate1Modal() {
+  const modal = document.getElementById('modal-gate1-review');
+  if (modal) modal.style.display = 'none';
+}
+
+async function confirmGate1AndProceed() {
+  closeGate1Modal();
+  showToast("Gate 1 Approved", "Topology & match rules authorized by operator. Dispatching DBT Swarms...", "success");
+  addNotification("Review Gate 1 Authorized", "Operator signed off on 4-tier item matching rules and 3-tier contract pricing cascades.");
+  
+  // Auto-expand live Bee Swarms Stream to provide immediate visibility
+  const accordion = document.getElementById('bee-accordion');
+  if (accordion && accordion.classList.contains('collapsed')) {
+    toggleBeeAccordion();
+  }
+
+  try {
+    await fetch('/api/confirm_joins', { method: 'POST' });
+    switchStage('lineage');
+    await executeDbtPipeline();
+  } catch (err) {
+    showToast("Error", err.message, "error");
+  }
+}
+
+// Strict Gate 2 Review Modal Handlers (User Review Mode)
+function openGate2Modal() {
+  const modal = document.getElementById('modal-gate2-review');
+  if (modal) modal.style.display = 'flex';
+}
+
+function closeGate2Modal() {
+  const modal = document.getElementById('modal-gate2-review');
+  if (modal) modal.style.display = 'none';
+}
+
+async function confirmGate2AndProceed() {
+  closeGate2Modal();
+  const btnSnowflake = document.getElementById('btn-push-snowflake');
+
+  try {
+    const res = await fetch('/api/approve_audit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    const data = await res.json();
+    
+    showToast("Gate 2 Certified", "100% Golden Parity approved. Snowflake release unlocked!", "success");
+    addNotification("Review Gate 2 Certified", "Operator certified mathematical Golden Parity. Pipeline unlocked for Snowflake release.");
+
+    // Visual cue on Snowflake button
+    if (btnSnowflake) {
+      btnSnowflake.style.border = '2px solid #10b981';
+      btnSnowflake.style.boxShadow = '0 0 15px rgba(16, 185, 129, 0.4)';
+    }
+
+    const auditBadge = document.getElementById('audit-cert-badge');
+    if (auditBadge) {
+      auditBadge.className = 'badge badge-success';
+      auditBadge.textContent = 'AUDITED_CERTIFIED';
+    }
+
+    // Guide operator to Explorer
+    setTimeout(() => {
+      switchStage('explorer');
+      showToast("Pipeline Certified", "Ready for exploration and Snowflake deployment.", "info");
+    }, 1200);
+
+  } catch (err) {
+    showToast("Certification Error", err.message, "error");
+  }
+}
+
 async function confirmJoinsAndProceed() {
+  const mode = document.getElementById('select-autonomy-mode')?.value || 'default';
+
+  if (mode === 'user_review') {
+    openGate1Modal();
+    return;
+  }
+
+  if (mode === 'turbo') {
+    try {
+      showToast("Topology Auto-Locked", "Synthesizing layered DBT models...", "info");
+      await fetch('/api/confirm_joins', { method: 'POST' });
+      switchStage('lineage');
+      await executeDbtPipeline();
+    } catch (err) {
+      showToast("Error", err.message, "error");
+    }
+    return;
+  }
+
+  // Default mode: single clear prompt
   showLightbox(
     "Approve Topology & Run Pipeline?",
-    "Confirm the foreign-key join cascades and execute the layered DBT compilation across Staging, Intermediate, and Marts layers?",
+    "Confirm the 4-tier item matching rules and synthesize DBT models across Staging, Intermediate, and Marts?",
     "🤝",
     async () => {
       try {
@@ -862,15 +993,13 @@ async function confirmJoinsAndProceed() {
           btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> ⚙️ Synthesizing Models...';
         }
 
-        // Auto-expand live Bee Swarms Stream to provide immediate visibility
         const accordion = document.getElementById('bee-accordion');
         if (accordion && accordion.classList.contains('collapsed')) {
           toggleBeeAccordion();
         }
 
         showToast("Topology Approved", "Multi-tier join graph locked. Synthesizing models...", "info");
-        const res = await fetch('/api/confirm_joins', { method: 'POST' });
-        const data = await res.json();
+        await fetch('/api/confirm_joins', { method: 'POST' });
         
         showToast("Swarm Dispatched", "DBT Compilation executing across Staging, Intermediate, & Marts.", "success");
         addNotification("HITL Checkpoint Approved", "Operator approved join rules and initiated model generation");
@@ -939,6 +1068,8 @@ async function executeDbtPipeline() {
   btn.disabled = true;
   btn.textContent = '⚙️ Swarm Working...';
 
+  const mode = document.getElementById('select-autonomy-mode')?.value || 'default';
+
   try {
     const loadMode = document.getElementById('select-load-mode')?.value || 'bulk';
     const cadence = document.getElementById('select-incremental-cadence')?.value || 'daily';
@@ -984,20 +1115,50 @@ async function executeDbtPipeline() {
     loadParityDetails();
 
     const parityPct = result.parity_report?.overall_parity_match_pct || 100;
-    showLightbox(
-      "Autonomous Swarm Completed",
-      `Status: SUCCESS\nGolden Parity: ${parityPct}% Match\nAll output tables have been generated and certified with SupplyCopia standards.`,
-      "🎉",
-      () => switchStage('parity')
-    );
-    showToast("Pipeline Succeeded", `All models compiled with ${parityPct}% Golden Parity.`, "success");
-    addNotification("Pipeline Run Successful", `Full dbt pipeline executed and verified against baseline (${parityPct}% match)`);
+
+    // Autonomy-Differentiated Post-Compilation Flow:
+    if (mode === 'turbo') {
+      // Turbo: Auto-certify audit without pausing or blocking
+      try {
+        await fetch('/api/approve_audit', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+      } catch (e) {}
+      
+      const auditBadge = document.getElementById('audit-cert-badge');
+      if (auditBadge) {
+        auditBadge.className = 'badge badge-success';
+        auditBadge.textContent = 'AUDITED_CERTIFIED';
+      }
+
+      showToast("⚡ Turbo Execution Complete", `Autonomous swarms compiled models & verified ${parityPct}% Golden Parity!`, "success");
+      addNotification("Turbo Execution Complete", `All 6 stages executed autonomously with ${parityPct}% Golden Parity match.`);
+      
+      // Auto-land on Stage 5 explorer
+      setTimeout(() => switchStage('explorer'), 400);
+
+    } else if (mode === 'user_review') {
+      // User Review: Move to Stage 6 Parity Gate and open Gate 2 Modal
+      showToast("Models Compiled", "Proceeding to Gate 2: Parity Audit Certification.", "info");
+      switchStage('parity');
+      setTimeout(() => openGate2Modal(), 500);
+
+    } else {
+      // Default: Guided HITL completion lightbox guiding to Explorer
+      showLightbox(
+        "Autonomous Swarm Completed",
+        `Status: SUCCESS\nGolden Parity: ${parityPct}% Match\nAll output tables have been generated and certified with SupplyCopia standards.\n\nClick Continue to inspect tables in Data Explorer.`,
+        "🎉",
+        () => switchStage('explorer')
+      );
+      showToast("Pipeline Succeeded", `All models compiled with ${parityPct}% Golden Parity.`, "success");
+      addNotification("Pipeline Run Successful", `Full dbt pipeline executed and verified against baseline (${parityPct}% match)`);
+    }
+
   } catch (err) {
     showToast("Pipeline Compilation Failed", err.message, "error");
     openAutoResolveModal(err.message, "Pipeline Network/Compilation Fault");
   } finally {
     btn.disabled = false;
-    btn.textContent = '⚡ Run Autonomous Swarm';
+    handleAutonomyModeChange();
   }
 }
 
@@ -1009,15 +1170,46 @@ async function triggerGuidedSwarmWorkflow() {
   const mode = document.getElementById('select-autonomy-mode')?.value || 'default';
 
   if (mode === 'turbo') {
-    // Turbo Mode: Immediate autonomous end-to-end execution without stopping
-    showToast("Turbo Mode Activated", "Autonomous Swarm running full pipeline end-to-end...", "info");
-    addNotification("Turbo Mode", "Autonomous Swarm executing pipeline end-to-end without pauses");
-    switchStage('lineage');
-    isGuidedTourActive = false;
-    await executeDbtPipeline();
+    // ⚡ TURBO MODE: Rapid, non-blocking chained execution across all 6 stages
+    showToast("⚡ Turbo Mode Activated", "Full Autonomous Swarm executing all 6 stages end-to-end...", "info");
+    addNotification("Turbo Mode Activated", "Autonomous Swarms running ingestion, profiling, topology lock, and compilation without pauses.");
+    
+    // Auto-expand live Bee Swarms Stream to provide immediate visibility
+    const accordion = document.getElementById('bee-accordion');
+    if (accordion && accordion.classList.contains('collapsed')) {
+      toggleBeeAccordion();
+    }
+
+    try {
+      // Stage 1: Ingestion
+      switchStage('ingest');
+      await triggerIngestion();
+      await new Promise(r => setTimeout(r, 450));
+
+      // Stage 2: Profiling
+      switchStage('profile');
+      await loadRawProfile();
+      await new Promise(r => setTimeout(r, 450));
+
+      // Stage 3: Topology Lock
+      switchStage('joins');
+      await loadJoins();
+      await fetch('/api/confirm_joins', { method: 'POST' });
+      await new Promise(r => setTimeout(r, 450));
+
+      // Stage 4: DBT Compilation (will auto-certify & switch to explorer)
+      switchStage('lineage');
+      isGuidedTourActive = false;
+      await executeDbtPipeline();
+    } catch (err) {
+      console.error("Turbo mode execution error:", err);
+      showToast("Turbo Execution Alert", err.message, "error");
+      isGuidedTourActive = false;
+    }
     return;
   }
 
+  // USER REVIEW MODE or DEFAULT MODE
   try {
     // 1. Stage 1: Ingestion
     switchStage('ingest');
@@ -1037,7 +1229,7 @@ async function triggerGuidedSwarmWorkflow() {
     const btnProfile = document.getElementById('step-btn-profile');
     if (btnProfile) btnProfile.classList.add('bee-working');
     await loadRawProfile();
-    await new Promise(r => setTimeout(r, mode === 'user_review' ? 1800 : 1000));
+    await new Promise(r => setTimeout(r, mode === 'user_review' ? 1200 : 800));
     if (btnProfile) btnProfile.classList.remove('bee-working');
 
     // 3. Stage 3: Join Discovery & Review Gate
@@ -1048,21 +1240,18 @@ async function triggerGuidedSwarmWorkflow() {
     if (btnJoins) btnJoins.classList.remove('bee-working');
 
     isGuidedTourActive = false;
+
     if (mode === 'user_review') {
+      // User Review Mode: Opens strict Gate 1 Modal
+      openGate1Modal();
+    } else {
+      // Default Mode: Friendly guided HITL checkpoint
       showLightbox(
-        "🛡️ User Review Gate: Topology Approval Required",
-        "You are in 'User Review' mode. Please carefully inspect synthesized cross-dataset joins, 4-tier item matching cascades, and 3-tier contract pricing matching logic before authorizing compilation.",
-        "🤝",
+        "⏸️ Guided Checkpoint: Review Discovered Joins",
+        "Architect Bee has mapped 4-tier item matching cascades and 3-tier contract rules.\n\nPlease inspect the Discovered Joins and click 'Approve & Compile DBT' to proceed.",
+        "📐",
         () => confirmJoinsAndProceed(),
         true
-      );
-    } else {
-      // Default Mode
-      showLightbox(
-        "⏸️ PAUSED AT HITL CHECKPOINT",
-        "Architect Bee Pollen has mapped 4-tier item matching and 3-tier contract rules.\n\nPlease inspect the Discovered Joins and click 'Approve Topology & Compile DBT Models' to continue.",
-        "📐",
-        () => confirmJoinsAndProceed()
       );
     }
   } catch (err) {

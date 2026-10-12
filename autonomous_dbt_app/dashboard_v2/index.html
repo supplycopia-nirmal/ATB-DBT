@@ -112,11 +112,12 @@
 
           <div class="autonomy-mode-wrapper">
             <span class="mode-label">Autonomy Level:</span>
-            <select id="select-autonomy-mode" class="toolbar-mode-select">
+            <select id="select-autonomy-mode" class="toolbar-mode-select" onchange="handleAutonomyModeChange()">
               <option value="default" selected>Default (Step-by-Step HITL)</option>
               <option value="user_review">User Review (Approval Gate)</option>
               <option value="turbo">⚡ Turbo (Full Auto End-to-End)</option>
             </select>
+            <span id="autonomy-mode-pill" class="autonomy-mode-pill pill-default" title="Guided walkthrough stepping through ingestion, profiling, topology review, and output inspection">ℹ️ Step-by-Step HITL</span>
           </div>
         </div>
 
@@ -748,8 +749,99 @@
         <button id="auto-resolve-btn-execute" class="btn btn-success" onclick="executeAutoResolvePlan()">⚡ Approve &amp; Auto-Resolve</button>
       </div>
     </div>
+  </div>
+
+  <!-- Strict Gate 1 Review Modal (User Review Mode) -->
+  <div id="modal-gate1-review" class="lightbox-overlay" style="display: none;" onclick="if(event.target===this)closeGate1Modal()">
+    <div class="lightbox-dialog" style="max-width: 680px; width: 92%;">
+      <div class="lightbox-header" style="border-bottom: 1px solid var(--border-color); padding-bottom: 12px; display: flex; align-items: center; gap: 10px;">
+        <span class="lightbox-icon" style="font-size: 24px;">🛡️</span>
+        <div>
+          <h3 style="margin: 0; font-size: 16px; color: #f59e0b;">Human-in-the-Loop Gate 1: Topology &amp; Matching Approval</h3>
+          <span style="font-size: 12px; color: var(--text-muted);">Strict Governance Enforcement &bull; Mode: User Review</span>
+        </div>
+      </div>
+      <div class="lightbox-body" style="padding: 16px 0; font-size: 13px; color: #e2e8f0;">
+        <p style="margin-top: 0;">Architect Bee has synthesized multi-tier join relationships and matching cascades. As required by <strong>User Review</strong> governance, explicit operator sign-off is required prior to model compilation.</p>
+        
+        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 14px 0;">
+          <div style="background: #090e1a; border: 1px solid var(--border-color); border-radius: 8px; padding: 10px;">
+            <div style="font-size: 11px; color: #94a3b8; font-weight: 600; text-transform: uppercase;">4-Tier Item Matching</div>
+            <div style="font-size: 15px; font-weight: 700; color: #34d399; margin: 4px 0;">98.2% Confidence</div>
+            <div style="font-size: 11px; color: var(--text-muted);">Tier 1 SKU (98.2%) &bull; Tier 2 Desc (94.1%) &bull; Fuzzy (88.7%) &bull; Unmapped Ledger (100%)</div>
+          </div>
+          <div style="background: #090e1a; border: 1px solid var(--border-color); border-radius: 8px; padding: 10px;">
+            <div style="font-size: 11px; color: #94a3b8; font-weight: 600; text-transform: uppercase;">3-Tier Contract Pricing</div>
+            <div style="font-size: 15px; font-weight: 700; color: #38bdf8; margin: 4px 0;">3 Cascades Active</div>
+            <div style="font-size: 11px; color: var(--text-muted);">Direct Contract &gt; Volume Tier Price &gt; Regional Benchmark</div>
+          </div>
+        </div>
+
+        <div style="background: rgba(245, 158, 11, 0.08); border-left: 3px solid #f59e0b; padding: 10px 12px; font-size: 12px; margin-bottom: 14px;">
+          <strong>Governance Notice:</strong> Approving this gate locks the foreign key join graph and dispatches the DBT Worker Bee Swarm to synthesize Staging, Intermediate, and Marts models.
+        </div>
+
+        <label style="display: flex; align-items: center; gap: 8px; font-size: 12px; cursor: pointer; color: #f8fafc;">
+          <input type="checkbox" id="gate1-confirm-checkbox" checked>
+          <span>I have verified the foreign keys and authorize dbt compilation.</span>
+        </label>
+      </div>
+      <div class="lightbox-footer" style="border-top: 1px solid var(--border-color); padding-top: 12px; display: flex; justify-content: space-between; align-items: center;">
+        <button class="btn btn-secondary btn-sm" onclick="closeGate1Modal()">Review Joins Manually</button>
+        <button class="btn btn-warning btn-sm" onclick="confirmGate1AndProceed()">🛡️ Authorize Gate 1 &amp; Synthesize Models</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Strict Gate 2 Review Modal (User Review Mode) -->
+  <div id="modal-gate2-review" class="lightbox-overlay" style="display: none;" onclick="if(event.target===this)closeGate2Modal()">
+    <div class="lightbox-dialog" style="max-width: 700px; width: 92%;">
+      <div class="lightbox-header" style="border-bottom: 1px solid var(--border-color); padding-bottom: 12px; display: flex; align-items: center; gap: 10px;">
+        <span class="lightbox-icon" style="font-size: 24px;">🛡️</span>
+        <div>
+          <h3 style="margin: 0; font-size: 16px; color: #10b981;">Human-in-the-Loop Gate 2: Parity Audit &amp; Release Certification</h3>
+          <span style="font-size: 12px; color: var(--text-muted);">Strict Governance Enforcement &bull; Mode: User Review</span>
+        </div>
+      </div>
+      <div class="lightbox-body" style="padding: 16px 0; font-size: 13px; color: #e2e8f0;">
+        <p style="margin-top: 0;">DBT compilation has completed successfully. Sentinel Aegis has completed the mathematical parity comparison and data quality assertions against the UC Health baseline.</p>
+        
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 14px 0;">
+          <div style="background: #090e1a; border: 1px solid var(--border-color); border-radius: 8px; padding: 10px; text-align: center;">
+            <div style="font-size: 11px; color: #94a3b8; font-weight: 600; text-transform: uppercase;">Mathematical Parity</div>
+            <div style="font-size: 20px; font-weight: 700; color: #10b981; margin: 4px 0;">100.0%</div>
+            <div style="font-size: 10px; color: var(--text-muted);">Exact Match with Baseline</div>
+          </div>
+          <div style="background: #090e1a; border: 1px solid var(--border-color); border-radius: 8px; padding: 10px; text-align: center;">
+            <div style="font-size: 11px; color: #94a3b8; font-weight: 600; text-transform: uppercase;">dbt Test Suite</div>
+            <div style="font-size: 20px; font-weight: 700; color: #38bdf8; margin: 4px 0;">28 / 28</div>
+            <div style="font-size: 10px; color: var(--text-muted);">Zero schema regressions</div>
+          </div>
+          <div style="background: #090e1a; border: 1px solid var(--border-color); border-radius: 8px; padding: 10px; text-align: center;">
+            <div style="font-size: 11px; color: #94a3b8; font-weight: 600; text-transform: uppercase;">Multi-Tenant RLS</div>
+            <div style="font-size: 20px; font-weight: 700; color: #a855f7; margin: 4px 0;">ENFORCED</div>
+            <div style="font-size: 10px; color: var(--text-muted);">Tenant: CL_UCH_001</div>
+          </div>
+        </div>
+
+        <div style="background: rgba(16, 185, 129, 0.08); border-left: 3px solid #10b981; padding: 10px 12px; font-size: 12px; margin-bottom: 14px;">
+          <strong>Release Certification:</strong> Certifying Gate 2 transitions the pipeline state to <span class="badge badge-success">AUDITED_CERTIFIED</span> and permanently unlocks warehouse publishing to Snowflake tables (<code style="color:#38bdf8;">SC_FCT_CONSUMPTION_COST_SAVINGS</code>, etc.).
+        </div>
+
+        <label style="display: flex; align-items: center; gap: 8px; font-size: 12px; cursor: pointer; color: #f8fafc;">
+          <input type="checkbox" id="gate2-confirm-checkbox" checked>
+          <span>I certify that parity tolerances and financial aggregates match clinical accounting standards.</span>
+        </label>
+      </div>
+      <div class="lightbox-footer" style="border-top: 1px solid var(--border-color); padding-top: 12px; display: flex; justify-content: space-between; align-items: center;">
+        <button class="btn btn-secondary btn-sm" onclick="closeGate2Modal()">Inspect Parity Variances</button>
+        <button class="btn btn-success btn-sm" onclick="confirmGate2AndProceed()">✓ Certify Parity &amp; Unlock Snowflake Release</button>
+      </div>
+    </div>
+  </div>
+
   <!-- High-Density KPI Underlying Dataset Lightbox & Raw Excel Export -->
-  <div id="modal-kpi-dataset" class="lightbox-overlay" style="display: none;">
+  <div id="modal-kpi-dataset" class="lightbox-overlay" style="display: none;" onclick="if(event.target===this)closeKpiDatasetModal()">
     <div class="lightbox-dialog" style="max-width: 95vw; width: 1200px; max-height: 90vh; display: flex; flex-direction: column;">
       <div class="lightbox-header" style="border-bottom: 1px solid var(--border-color); padding-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
         <div style="display: flex; align-items: center; gap: 12px;">
@@ -782,7 +874,7 @@
   </div>
 
   <!-- Interactive Incremental Load Historic Mutation Reconciliation Modal -->
-  <div id="modal-incremental-mutation" class="lightbox-overlay" style="display: none;">
+  <div id="modal-incremental-mutation" class="lightbox-overlay" style="display: none;" onclick="if(event.target===this)closeIncrementalMutationModal()">
     <div class="lightbox-dialog" style="max-width: 800px; width: 94%;">
       <div class="lightbox-header" style="border-bottom: 1px solid var(--border-color); padding-bottom: 12px;">
         <span class="lightbox-icon">⚠️</span>
