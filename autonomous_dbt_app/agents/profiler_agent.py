@@ -63,9 +63,20 @@ class ProfilerAgent:
                     manifest["source_classification"][entity_type] = file_info["file_name"]
                 classified_entities.add(entity_type)
 
+        # Normalize classified set for alias tolerance (e.g. purchase_order <-> purchase_orders, invoice <-> invoices)
+        normalized_classified = set(classified_entities)
+        if "purchase_orders" in normalized_classified:
+            normalized_classified.add("purchase_order")
+        if "purchase_order" in normalized_classified:
+            normalized_classified.add("purchase_orders")
+        if "invoices" in normalized_classified:
+            normalized_classified.add("invoice")
+        if "invoice" in normalized_classified:
+            normalized_classified.add("invoices")
+
         # Check required and optional entities
-        missing_required = [req for req in REQUIRED_ENTITIES if req not in classified_entities]
-        missing_optional = [opt for opt in OPTIONAL_ENTITIES if opt not in classified_entities]
+        missing_required = [req for req in REQUIRED_ENTITIES if req not in normalized_classified]
+        missing_optional = [opt for opt in OPTIONAL_ENTITIES if opt not in normalized_classified]
 
         if missing_required:
             manifest["status"] = "ERROR_MISSING_REQUIRED"

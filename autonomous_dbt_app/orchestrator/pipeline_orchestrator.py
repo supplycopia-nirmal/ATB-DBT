@@ -71,9 +71,10 @@ class PipelineOrchestrator:
         )
         profile_manifest = self.profiler.profile_directory(folder)
         if profile_manifest.get("status") == "ERROR_MISSING_REQUIRED":
-            self.state_mgr.log_swarm_event("Scout Bee Buzz", "Cloud Ingestion & Profiler", "Missing Mandatory Datasets", profile_manifest.get("error_message"), "⚠️")
-            self.state_mgr.update_status(PipelineState.FAILED, "Profiling Failed", profile_manifest.get("error_message"))
-            return {"status": "FAILED", "manifest": profile_manifest}
+            err_msg = profile_manifest.get("error_message") or "Missing required datasets"
+            self.state_mgr.log_swarm_event("Scout Bee Buzz", "Cloud Ingestion & Profiler", "Missing Mandatory Datasets", err_msg, "⚠️")
+            self.state_mgr.update_status(PipelineState.FAILED, "Profiling Failed", err_msg)
+            return {"status": "FAILED", "message": err_msg, "manifest": profile_manifest}
 
         self.state_mgr.log_swarm_event(
             "Scout Bee Buzz", "Cloud Ingestion & Profiler", "Datasets Profiled",
@@ -147,9 +148,10 @@ class PipelineOrchestrator:
         self.state_mgr.save(state_data)
 
         if exec_report["status"] != "SUCCESS":
-            self.state_mgr.log_swarm_event("Inspector Bee Guard", "QA & Diagnostics", "Execution Failure", "Some models could not be executed.", "❌")
-            self.state_mgr.update_status(PipelineState.FAILED, "Execution Failed", "Some models could not be executed.")
-            return {"status": "FAILED", "execution_report": exec_report}
+            failure_detail = "; ".join([f"{f.get('model')}: {f.get('error')}" for f in exec_report.get("failures", [])]) or "Model execution error"
+            self.state_mgr.log_swarm_event("Inspector Bee Guard", "QA & Diagnostics", "Execution Failure", f"Execution Failed: {failure_detail}", "❌")
+            self.state_mgr.update_status(PipelineState.FAILED, "Execution Failed", failure_detail)
+            return {"status": "FAILED", "message": f"Pipeline model compilation failed: {failure_detail}", "execution_report": exec_report}
 
         self.state_mgr.log_swarm_event(
             "Inspector Bee Guard", "QA & Diagnostics", "Execution Success",

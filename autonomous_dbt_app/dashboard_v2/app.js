@@ -461,14 +461,19 @@ async function triggerIngestion() {
       })
     });
     const data = await res.json();
-    statusDiv.innerHTML = `<span style="color: #34d399;">✅ Ingestion Complete! Profiled ${data.files_found?.length || 0} files.</span>`;
-    showToast("Ingestion Complete", `Staged & profiled ${data.files_found?.length || 0} datasets.`, "success");
+    if (!res.ok || data.status === 'ERROR') {
+      throw new Error(data.message || 'S3 Ingestion failed');
+    }
+    const count = data.sync_result?.files_downloaded?.length || data.profile_manifest?.files_found?.length || 0;
+    statusDiv.innerHTML = `<span style="color: #34d399;">✅ Ingestion Complete! Profiled ${count} files.</span>`;
+    showToast("Ingestion Complete", `Staged & profiled ${count} datasets from S3.`, "success");
     addNotification("S3 Ingestion Successful", `Tenant ${cName} data ingested from ${uri}`);
-    loadRawProfile();
-    switchStage('profile');
+    await loadRawProfile();
+    return true;
   } catch (err) {
     statusDiv.innerHTML = `<span style="color: #ef4444;">❌ Error: ${err.message}</span>`;
     showToast("Ingestion Failed", err.message, "error");
+    return false;
   }
 }
 
@@ -954,8 +959,13 @@ async function executeDbtPipeline() {
     });
     const result = await res.json();
     if (!res.ok || result.status === 'ERROR' || result.status === 'FAILED') {
-      const errMsg = result.message || "Pipeline execution encountered an error";
+      let errMsg = result.message || result.manifest?.error_message;
+      if (!errMsg && result.execution_report?.failures?.length) {
+        errMsg = result.execution_report.failures.map(f => `${f.model}: ${f.error}`).join('; ');
+      }
+      if (!errMsg) errMsg = "Pipeline execution encountered an error";
       showToast("Pipeline Execution Error", errMsg, "error");
+      addNotification("Pipeline Execution Error", errMsg);
       openAutoResolveModal(errMsg, "Autonomous Swarm Execution (Tab 4)");
       return;
     }
@@ -1000,41 +1010,58 @@ async function triggerGuidedSwarmWorkflow() {
     return;
   }
 
-  const steps = ['ingest', 'profile', 'joins'];
-  for (let i = 0; i < steps.length; i++) {
-    const stageId = steps[i];
-    switchStage(stageId);
+  try {
+    // 1. Stage 1: Ingestion
+    switchStage('ingest');
+    const btnIngest = document.getElementById('step-btn-ingest');
+    if (btnIngest) btnIngest.classList.add('bee-working');
+    const ingestOk = await triggerIngestion();
+    if (btnIngest) btnIngest.classList.remove('bee-working');
 
-    const btn = document.getElementById(`step-btn-${stageId}`);
-    if (btn) btn.classList.add('bee-working');
-
-    const delay = (mode === 'user_review') ? 2200 : 1200;
-    await new Promise(r => setTimeout(r, delay));
-    if (btn) btn.classList.remove('bee-working');
-
-    if (stageId === 'joins') {
+    if (!ingestOk) {
       isGuidedTourActive = false;
-      if (mode === 'user_review') {
-        showLightbox(
-          "🛡️ User Review Gate: Topology Approval Required",
-          "You are in 'User Review' mode. Please carefully inspect synthesized cross-dataset joins, 4-tier item matching cascades, and 3-tier contract pricing matching logic before authorizing compilation.",
-          "🤝",
-          () => confirmJoinsAndProceed(),
-          true
-        );
-      } else {
-        // Default Mode
-        showLightbox(
-          "⏸️ PAUSED AT HITL CHECKPOINT",
-          "Architect Bee Pollen has mapped 4-tier item matching and 3-tier contract rules.\n\nPlease inspect the Discovered Joins and click 'Approve Topology & Compile DBT Models' to continue.",
-          "📐",
-          () => confirmJoinsAndProceed()
-        );
-      }
+      showToast("Ingestion Alert", "Ingestion encountered an issue. Paused on Stage 1 for review.", "warning");
       return;
     }
+
+    // 2. Stage 2: Profiling
+    switchStage('profile');
+    const btnProfile = document.getElementById('step-btn-profile');
+    if (btnProfile) btnProfile.classList.add('bee-working');
+    await loadRawProfile();
+    await new Promise(r => setTimeout(r, mode === 'user_review' ? 1800 : 1000));
+    if (btnProfile) btnProfile.classList.remove('bee-working');
+
+    // 3. Stage 3: Join Discovery & Review Gate
+    switchStage('joins');
+    const btnJoins = document.getElementById('step-btn-joins');
+    if (btnJoins) btnJoins.classList.add('bee-working');
+    await loadJoins();
+    if (btnJoins) btnJoins.classList.remove('bee-working');
+
+    isGuidedTourActive = false;
+    if (mode === 'user_review') {
+      showLightbox(
+        "🛡️ User Review Gate: Topology Approval Required",
+        "You are in 'User Review' mode. Please carefully inspect synthesized cross-dataset joins, 4-tier item matching cascades, and 3-tier contract pricing matching logic before authorizing compilation.",
+        "🤝",
+        () => confirmJoinsAndProceed(),
+        true
+      );
+    } else {
+      // Default Mode
+      showLightbox(
+        "⏸️ PAUSED AT HITL CHECKPOINT",
+        "Architect Bee Pollen has mapped 4-tier item matching and 3-tier contract rules.\n\nPlease inspect the Discovered Joins and click 'Approve Topology & Compile DBT Models' to continue.",
+        "📐",
+        () => confirmJoinsAndProceed()
+      );
+    }
+  } catch (err) {
+    console.error("Error in guided swarm workflow:", err);
+    showToast("Workflow Paused", err.message, "error");
+    isGuidedTourActive = false;
   }
-  isGuidedTourActive = false;
 }
 
 // Stage 5 Output Data Explorer

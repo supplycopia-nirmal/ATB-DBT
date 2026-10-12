@@ -165,7 +165,7 @@ select * from standardized;
             f.write(stg_consumption_sql)
         generated_files.append("models/staging/stg_consumption.sql")
 
-        po_source = blueprint["sources"].get("purchase_order", {})
+        po_source = blueprint["sources"].get("purchase_orders") or blueprint["sources"].get("purchase_order", {})
         po_file = po_source.get("file_name", "UHC_PO_20260930010955.csv")
         po_delim = po_source.get("delimiter", "|")
 

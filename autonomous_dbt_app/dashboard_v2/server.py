@@ -704,15 +704,7 @@ Provide a helpful, precise, professional, and knowledgeable answer as the Ask Th
             "User approved foreign-key join topology and multi-tier matching rules.",
             "👑"
         )
-
-        folder = Path(state_data.get("client_folder") or BASE_DATA_DIR)
-        client_meta = state_data.get("client_metadata")
-        baseline = PROJECT_ROOT / "uc_health" / "uc_health.duckdb"
-        try:
-            res = orchestrator.run_full_pipeline(folder, client_metadata=client_meta, baseline_db_path=baseline)
-            self._send_json(res)
-        except Exception as e:
-            self._send_json({"status": "ERROR", "message": str(e)}, status=500)
+        self._send_json({"status": "SUCCESS", "message": "Topology approved and locked."})
 
     def _handle_raw_profile(self):
         state_data = state_mgr.load()

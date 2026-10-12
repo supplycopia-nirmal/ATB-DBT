@@ -181,7 +181,7 @@ class ArchitectAgent:
             if uc in ["SUPPLIER", "VENDOR_NAME", "DISTRIBUTOR"]: return "supplier"
             if uc in ["UNSPSC_CODE", "UNSPSC"]: return "unspsc_code"
 
-        elif entity == "purchase_order":
+        elif entity in ["purchase_order", "purchase_orders"]:
             if uc in ["PO_NUMBER", "PO_CODE", "PURCHASE_ORDER_NUMBER", "DOC_NUM"]: return "po_number"
             if uc in ["PO_LINE_NO", "LINE_NBR", "LINE_NUMBER", "PO_LINE"]: return "po_line_no"
             if uc in ["PO_DATE", "ORDER_DATE", "CREATION_DATE"]: return "po_date"
