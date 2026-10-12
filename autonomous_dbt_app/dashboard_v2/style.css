@@ -263,6 +263,7 @@ body {
   border-radius: 6px;
   display: inline-flex;
   align-items: center;
+}
 .clickable-badge {
   cursor: pointer;
   transition: all 0.2s ease;
