@@ -130,3 +130,50 @@ class S3Connector:
                 result["status"] = "ERROR_S3_FETCH"
                 result["message"] = str(e)
                 return result
+
+    def upload_to_s3(self, local_path: Path, s3_prefix: str, bucket_name: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Uploads a local file or directory to the target S3 prefix.
+        Uses chunked multipart uploading for large datasets.
+        """
+        local_path = Path(local_path)
+        bucket = bucket_name or os.getenv("S3_DEFAULT_BUCKET", "supplycopia-dbt-ingestion")
+        s3_client = boto3.client(
+            "s3",
+            aws_access_key_id=self.access_key,
+            aws_secret_access_key=self.secret_key,
+            aws_session_token=self.session_token,
+            region_name=self.region
+        )
+
+        uploaded = []
+        clean_prefix = s3_prefix.strip().strip("/")
+
+        files_to_upload = []
+        if local_path.is_file():
+            files_to_upload.append((local_path, f"{clean_prefix}/{local_path.name}" if clean_prefix else local_path.name))
+        elif local_path.is_dir():
+            for item in local_path.rglob("*"):
+                if item.is_file() and not item.name.startswith("."):
+                    rel_sub = item.relative_to(local_path)
+                    s3_key = f"{clean_prefix}/{rel_sub}" if clean_prefix else str(rel_sub)
+                    files_to_upload.append((item, s3_key))
+
+        for file_p, key in files_to_upload:
+            size_mb = file_p.stat().st_size / (1024 * 1024)
+            print(f"[Carrier Bee Nectar] Uploading {file_p.name} ({size_mb:.2f} MB) -> s3://{bucket}/{key}...")
+            s3_client.upload_file(str(file_p), bucket, key)
+            uploaded.append({
+                "local_file": str(file_p),
+                "s3_key": key,
+                "size_bytes": file_p.stat().st_size
+            })
+
+        return {
+            "status": "SUCCESS",
+            "bucket": bucket,
+            "s3_prefix": clean_prefix,
+            "uploaded_files": uploaded,
+            "count": len(uploaded)
+        }
+

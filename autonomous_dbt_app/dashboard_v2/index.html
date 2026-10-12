@@ -150,8 +150,8 @@
               <div class="ingest-col">
                 <div class="form-group">
                   <label for="input-s3-uri">AWS S3 Bucket Folder URL / URI</label>
-                  <input type="text" id="input-s3-uri" value="s3://supplycopia-client-data-lake/clients/uc_health/raw/batch_2026_q3/" placeholder="s3://my-client-bucket/hospital-data/">
-                  <div class="form-hint">Format: <code>s3://bucket/folder/</code> or <code>https://bucket.s3.amazonaws.com/folder/</code></div>
+                  <input type="text" id="input-s3-uri" value="s3://supplycopia-dbt-ingestion/clients/uc_health/raw/bulk_history/" placeholder="s3://supplycopia-dbt-ingestion/clients/uc_health/raw/bulk_history/">
+                  <div class="form-hint">Format: <code>s3://bucket/clients/&lt;client_slug&gt;/raw/bulk_history/</code> or <code>http://bucket.s3.us-east-2.amazonaws.com/clients/...</code></div>
                 </div>
                 <div class="form-group">
                   <label for="input-client-name">Client / Health System Name</label>
@@ -501,20 +501,20 @@
               <tr>
                 <td><input type="checkbox" id="sf-chk-3" checked></td>
                 <td><code>fct_consumption_cost_savings_v4</code></td>
-                <td><input type="text" class="table-name-input" id="sf-tbl-3" value="UC_HEALTH_FCT_CONSUMPTION_COST_SAVINGS_V4"></td>
-                <td><span class="badge badge-success">Marts</span></td>
+                <td><input type="text" class="table-name-input" id="sf-tbl-3" value="SC_FCT_CONSUMPTION_COST_SAVINGS"></td>
+                <td><span class="badge badge-success">Common Analytics Mart</span></td>
               </tr>
               <tr>
                 <td><input type="checkbox" id="sf-chk-4" checked></td>
                 <td><code>fct_po_cost_savings_v4</code></td>
-                <td><input type="text" class="table-name-input" id="sf-tbl-4" value="UC_HEALTH_FCT_PO_COST_SAVINGS_V4"></td>
-                <td><span class="badge badge-success">Marts</span></td>
+                <td><input type="text" class="table-name-input" id="sf-tbl-4" value="SC_FCT_PO_COST_SAVINGS"></td>
+                <td><span class="badge badge-success">Common Analytics Mart</span></td>
               </tr>
               <tr>
                 <td><input type="checkbox" id="sf-chk-5" checked></td>
                 <td><code>fct_gap_analysis_v4</code></td>
-                <td><input type="text" class="table-name-input" id="sf-tbl-5" value="UC_HEALTH_FCT_GAP_ANALYSIS_V4"></td>
-                <td><span class="badge badge-success">Marts</span></td>
+                <td><input type="text" class="table-name-input" id="sf-tbl-5" value="SC_FCT_GAP_ANALYSIS"></td>
+                <td><span class="badge badge-success">Common Analytics Mart</span></td>
               </tr>
             </tbody>
           </table>

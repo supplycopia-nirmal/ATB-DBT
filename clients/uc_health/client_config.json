@@ -3,7 +3,7 @@
   "client_name": "UC Health System",
   "client_type": "HealthCare System",
   "ehr_system": "Epic Systems EHR / Lawson ERP",
-  "s3_bucket": "s3://supplycopia-client-data-lake/clients/uc_health/",
+  "s3_bucket": "s3://supplycopia-dbt-ingestion/clients/uc_health/",
   "sources": {
     "consumption": "UHC_Consumption.csv",
     "purchase_orders": "UHC_PO_20260930010955.csv",
@@ -24,6 +24,6 @@
   "snowflake_target": {
     "database": "SUPPLYCOPIA_TRANSFORM",
     "schema": "SCRETAIL_IMPORT",
-    "table_prefix": "SC_UCH"
+    "table_prefix": "SC_FCT"
   }
 }
