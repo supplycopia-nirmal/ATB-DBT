@@ -1,0 +1,17 @@
+.git
+.gitignore
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.env
+*.duckdb
+*.duckdb.wal
+*.duckdb.tmp*
+.DS_Store
+*.p8
+*.pem
+*.key
+agent_memory/chroma_db/
+Data/
+output/

@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  atb-studio:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: supplycopia/atb-dbt-studio:latest
+    container_name: supplycopia-atb-studio
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    env_file:
+      - .env
+    volumes:
+      - ./agent_memory:/app/agent_memory
+      - ./output:/app/output
+    environment:
+      - DASHBOARD_PORT=8081
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
