@@ -4,6 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SupplyCopia | Ask The Bee: Autonomous DBT Pipeline Studio</title>
+  <link rel="icon" type="image/png" href="favicon.png">
+  <link rel="shortcut icon" type="image/png" href="favicon.png">
   <link rel="stylesheet" href="style.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -42,27 +44,42 @@
 
     <!-- Main Application Container -->
     <div class="app-container">
-      <!-- Header -->
+      <!-- Tier 1: Global Enterprise Header -->
       <header class="app-header">
         <div class="header-left">
-          <div class="brand-badge" onclick="toggleSavedSidebar()" title="Click to view Saved DBT Pipelines">
-            🐝 Ask The Bee <span class="saved-badge-pill" id="header-saved-count">1</span>
+          <div class="brand-group">
+            <img src="logo.png" alt="SupplyCopia Logo" class="brand-logo" onerror="this.style.display='none'">
+            <div class="brand-text">
+              <div class="brand-title-row">
+                <span class="brand-name">SupplyCopia</span>
+                <span class="brand-separator">/</span>
+                <span class="product-badge">🐝 Ask The Bee</span>
+              </div>
+              <span class="product-sub">Autonomous Multi-Tenant DBT Studio</span>
+            </div>
           </div>
-          <div>
-            <h1>Autonomous DBT Pipeline Studio</h1>
+          <div id="tenant-pill" class="tenant-tag" title="Active Client Tenant Context">
+            <span class="tenant-dot"></span>
+            <strong>Tenant:</strong> UC Health <span class="tenant-id">(CL_UCH_001)</span>
           </div>
         </div>
+
         <div class="header-right">
-          <div id="tenant-pill" class="badge badge-primary">Tenant: UC Health (CL_UCH_001)</div>
-          <div id="parity-badge" class="badge badge-success">Parity: 100% Match</div>
-          <div id="status-badge" class="badge badge-primary clickable-badge" onclick="handleStatusBadgeClick()" title="Click to review pending review gate or current pipeline stage">State: READY</div>
-          <button class="btn btn-secondary" onclick="openEnterpriseModal()">⚡ Enterprise Suite</button>
-          
-          <!-- Notification Bell -->
+          <!-- System Status Clusters -->
+          <div class="status-cluster">
+            <div id="parity-badge" class="badge badge-success" title="Golden Parity Assertion Status">
+              <span class="indicator-dot dot-success"></span> Parity: 100% Match
+            </div>
+            <div id="status-badge" class="badge badge-primary clickable-badge" onclick="handleStatusBadgeClick()" title="Pipeline Lifecycle State • Click to inspect active review gate">
+              <span class="indicator-dot dot-primary"></span> State: READY
+            </div>
+          </div>
+
+          <!-- Notification Center -->
           <div class="notif-bell-wrapper">
-            <button id="btn-notifications" class="notif-btn" onclick="toggleNotificationDrawer()" title="Notifications">
+            <button id="btn-notifications" class="notif-btn" onclick="toggleNotificationDrawer()" title="Swarm Event Notifications">
               🔔
-              <span id="notification-badge" class="notif-badge">2</span>
+              <span id="notification-badge" class="notif-badge">0</span>
             </button>
             <div id="notification-drawer" class="notif-drawer">
               <div class="notif-header">
@@ -75,19 +92,40 @@
             </div>
           </div>
 
-          <div style="display: flex; align-items: center; gap: 6px; background: rgba(15, 23, 42, 0.8); border: 1px solid var(--border-color); border-radius: 8px; padding: 2px 6px;">
-            <label style="font-size: 11px; color: var(--text-muted); font-weight: 600;">Mode:</label>
-            <select id="select-autonomy-mode" class="entity-select" style="background: transparent; border: none; font-size: 12px; font-weight: 600; color: #38bdf8; padding: 4px 6px; cursor: pointer;">
-              <option value="default" style="background:#0f172a; color:#f8fafc;" selected>Default (Step-by-Step HITL)</option>
-              <option value="user_review" style="background:#0f172a; color:#f8fafc;">User Review (Approval Gate)</option>
-              <option value="turbo" style="background:#0f172a; color:#f8fafc;">⚡ Turbo (Full Auto End-to-End)</option>
-            </select>
+          <!-- Authenticated User Profile Pill -->
+          <div class="user-profile-badge" title="Authenticated User Session">
+            <span class="user-avatar">👤</span>
+            <span class="user-name">admin</span>
+            <span class="auth-pill">SSO-Ready</span>
           </div>
-
-          <button id="btn-run-pipeline" class="btn btn-primary" onclick="triggerGuidedSwarmWorkflow()">⚡ Run Autonomous Swarm</button>
-          <button id="btn-push-snowflake" class="btn btn-snowflake" onclick="openSnowflakeModal()">❄️ Push to Snowflake</button>
         </div>
       </header>
+
+      <!-- Tier 2: Action Command Deck (Control Toolbar) -->
+      <div class="command-toolbar">
+        <div class="toolbar-left">
+          <button class="toolbar-btn btn-saved-drawer" onclick="toggleSavedSidebar()" title="Open Saved Checkpoints Drawer">
+            📁 Saved Pipelines <span class="saved-badge-pill" id="header-saved-count">1</span>
+          </button>
+          
+          <div class="toolbar-divider"></div>
+
+          <div class="autonomy-mode-wrapper">
+            <span class="mode-label">Autonomy Level:</span>
+            <select id="select-autonomy-mode" class="toolbar-mode-select">
+              <option value="default" selected>Default (Step-by-Step HITL)</option>
+              <option value="user_review">User Review (Approval Gate)</option>
+              <option value="turbo">⚡ Turbo (Full Auto End-to-End)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="toolbar-right">
+          <button class="btn btn-secondary btn-sm" onclick="openEnterpriseModal()">⚡ Enterprise Suite</button>
+          <button id="btn-push-snowflake" class="btn btn-snowflake btn-sm" onclick="openSnowflakeModal()">❄️ Push to Snowflake</button>
+          <button id="btn-run-pipeline" class="btn btn-primary btn-sm btn-swarm-cta" onclick="triggerGuidedSwarmWorkflow()">🚀 Run Autonomous Swarm</button>
+        </div>
+      </div>
 
       <!-- Top KPI Bar (Interactive Drill-Down & Zero-Latency Raw Excel Export) -->
       <section class="kpi-banner">

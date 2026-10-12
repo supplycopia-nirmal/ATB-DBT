@@ -14,7 +14,8 @@ from datetime import datetime
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from autonomous_dbt_app.config import DASHBOARD_PORT, OUTPUT_DIR, BASE_DATA_DIR
+import base64
+from autonomous_dbt_app.config import DASHBOARD_PORT, OUTPUT_DIR, BASE_DATA_DIR, APP_AUTH_USERNAME, APP_AUTH_PASSWORD
 from autonomous_dbt_app.core.state_manager import StateManager
 from autonomous_dbt_app.orchestrator.pipeline_orchestrator import PipelineOrchestrator
 from autonomous_dbt_app.core.s3_connector import S3Connector
@@ -31,12 +32,53 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         directory = str(Path(__file__).resolve().parent)
         super().__init__(*args, directory=directory, **kwargs)
 
+    def _check_auth(self) -> bool:
+        """Enforces HTTP Basic Authentication using credentials from .env."""
+        auth_header = self.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Basic '):
+            return False
+        try:
+            encoded_cred = auth_header.split(' ', 1)[1].strip()
+            decoded_cred = base64.b64decode(encoded_cred).decode('utf-8')
+            username, password = decoded_cred.split(':', 1)
+            return (username == APP_AUTH_USERNAME and password == APP_AUTH_PASSWORD)
+        except Exception:
+            return False
+
+    def _send_auth_required(self):
+        """Sends HTTP 401 challenge requesting browser authentication prompt."""
+        self.send_response(401)
+        self.send_header('WWW-Authenticate', 'Basic realm="SupplyCopia Autonomous DBT Studio"')
+        self.send_header('Content-Type', 'text/html; charset=utf-8')
+        self.end_headers()
+        html = """<!DOCTYPE html>
+<html>
+<head><title>401 Authentication Required | SupplyCopia</title></head>
+<body style="background:#0a0f1d; color:#f8fafc; font-family:sans-serif; display:flex; justify-content:center; align-items:center; height:100vh; margin:0;">
+<div style="background:#151f38; border:1px solid #243254; border-radius:12px; padding:32px; text-align:center; max-width:440px;">
+  <h2 style="color:#38bdf8; margin-top:0;">🔒 Access Restricted</h2>
+  <p style="color:#94a3b8; font-size:14px;">Valid credentials required to access the SupplyCopia Autonomous DBT Studio.</p>
+  <button onclick="window.location.reload()" style="background:#0284c7; color:#fff; border:none; padding:10px 20px; border-radius:6px; font-weight:600; cursor:pointer;">Retry Login</button>
+</div>
+</body>
+</html>"""
+        self.wfile.write(html.encode('utf-8'))
+
     def do_HEAD(self):
+        if not self._check_auth():
+            self._send_auth_required()
+            return
         self.do_GET()
 
     def do_GET(self):
+        # Allow favicon and logo without challenge so browser icon displays cleanly
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
+        if path not in ["/favicon.ico", "/favicon.png", "/logo.png"]:
+            if not self._check_auth():
+                self._send_auth_required()
+                return
+
         params = urllib.parse.parse_qs(parsed.query)
 
         if path == "/api/status":
@@ -98,6 +140,10 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             super().do_GET()
 
     def do_POST(self):
+        if not self._check_auth():
+            self._send_auth_required()
+            return
+
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
         content_len = int(self.headers.get('Content-Length', 0))

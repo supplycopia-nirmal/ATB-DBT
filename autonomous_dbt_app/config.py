@@ -40,6 +40,8 @@ BASE_DATA_DIR = ROOT_DIR / "Data"
 OUTPUT_DIR = ROOT_DIR / "output"
 CHROMA_PERSIST_DIR = ROOT_DIR / "agent_memory" / "chroma_db"
 STATE_FILE = ROOT_DIR / "agent_memory" / "pipeline_state.json"
+APP_AUTH_USERNAME = os.getenv("APP_AUTH_USERNAME", "admin")
+APP_AUTH_PASSWORD = os.getenv("APP_AUTH_PASSWORD", "SupplyCopia@2026")
 
 # SupplyCopia Canonical Required vs Optional Entities
 REQUIRED_ENTITIES = ["consumption", "purchase_orders"]
