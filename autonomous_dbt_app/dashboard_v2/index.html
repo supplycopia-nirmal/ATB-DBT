@@ -89,27 +89,27 @@
         </div>
       </header>
 
-      <!-- Top KPI Bar -->
+      <!-- Top KPI Bar (Interactive Drill-Down & Zero-Latency Raw Excel Export) -->
       <section class="kpi-banner">
-        <div class="kpi-card">
-          <div class="kpi-label">Total Clinical Spend</div>
+        <div class="kpi-card interactive-kpi" onclick="openKpiDatasetModal('spend')" title="Click to view underlying clinical spend records &amp; export raw Excel">
+          <div class="kpi-label">Total Clinical Spend 🔍</div>
           <div id="kpi-spend" class="kpi-value">$243,934,093.08</div>
-          <div class="kpi-sub">Analyzed Lines: <span id="kpi-items">2,272,908</span></div>
+          <div class="kpi-sub">Analyzed Lines: <span id="kpi-items">2,272,908</span> • <span class="drilldown-hint">Click to inspect</span></div>
         </div>
-        <div class="kpi-card highlight">
-          <div class="kpi-label">Contract Match Rate</div>
+        <div class="kpi-card highlight interactive-kpi" onclick="openKpiDatasetModal('match_rate')" title="Click to inspect reconciled on-contract items &amp; export raw Excel">
+          <div class="kpi-label">Contract Match Rate 🔍</div>
           <div id="kpi-match-rate" class="kpi-value">51.92%</div>
-          <div class="kpi-sub">On-Contract: <span id="kpi-matched-count">1,179,985</span></div>
+          <div class="kpi-sub">On-Contract: <span id="kpi-matched-count">1,179,985</span> • <span class="drilldown-hint">Click to inspect</span></div>
         </div>
-        <div class="kpi-card success">
-          <div class="kpi-label">Savings Opportunity</div>
+        <div class="kpi-card success interactive-kpi" onclick="openKpiDatasetModal('savings')" title="Click to view all identified cost reduction opportunities &amp; export raw Excel">
+          <div class="kpi-label">Savings Opportunity 🔍</div>
           <div id="kpi-savings" class="kpi-value">$17,211,888.13</div>
-          <div class="kpi-sub">Benchmark: 15% Off-Contract</div>
+          <div class="kpi-sub">Benchmark: 15% Off-Contract • <span class="drilldown-hint">Click to inspect</span></div>
         </div>
-        <div class="kpi-card warning">
-          <div class="kpi-label">Identified Overpayment</div>
+        <div class="kpi-card warning interactive-kpi" onclick="openKpiDatasetModal('overpayment')" title="Click to view line-item overpayments &amp; pricing variances">
+          <div class="kpi-label">Identified Overpayment 🔍</div>
           <div id="kpi-overpayment" class="kpi-value">$182,724.87</div>
-          <div class="kpi-sub">Price Variance &gt; Contract</div>
+          <div class="kpi-sub">Price Variance &gt; Contract • <span class="drilldown-hint">Click to inspect</span></div>
         </div>
       </section>
 
@@ -708,6 +708,99 @@
       <div class="lightbox-footer" style="border-top: 1px solid var(--border-color); padding-top: 12px; display: flex; justify-content: space-between; align-items: center;">
         <button class="btn btn-secondary" onclick="closeAutoResolveModal()">Dismiss</button>
         <button id="auto-resolve-btn-execute" class="btn btn-success" onclick="executeAutoResolvePlan()">⚡ Approve &amp; Auto-Resolve</button>
+      </div>
+    </div>
+  <!-- High-Density KPI Underlying Dataset Lightbox & Raw Excel Export -->
+  <div id="modal-kpi-dataset" class="lightbox-overlay" style="display: none;">
+    <div class="lightbox-dialog" style="max-width: 95vw; width: 1200px; max-height: 90vh; display: flex; flex-direction: column;">
+      <div class="lightbox-header" style="border-bottom: 1px solid var(--border-color); padding-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <span id="kpi-modal-icon" class="lightbox-icon" style="font-size: 24px;">📊</span>
+          <div>
+            <h3 id="kpi-modal-title" style="margin: 0; font-size: 16px; color: #fff;">Underlying KPI Dataset Preview</h3>
+            <span id="kpi-modal-summary" style="font-size: 12px; color: var(--text-muted);">Showing first 50 sample records</span>
+          </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <a id="btn-kpi-export-excel" href="#" class="btn btn-success btn-sm" download style="text-decoration: none; font-weight: 600;">
+            📥 Export Raw Dataset to Excel (Zero Latency)
+          </a>
+          <button class="btn btn-secondary btn-sm" onclick="closeKpiDatasetModal()">✕ Close</button>
+        </div>
+      </div>
+      <div class="lightbox-body" style="flex: 1; overflow: auto; padding: 14px 0;">
+        <div class="table-container" style="max-height: 60vh; overflow-y: auto;">
+          <table class="data-table" id="kpi-modal-table">
+            <thead id="kpi-modal-thead"></thead>
+            <tbody id="kpi-modal-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="lightbox-footer" style="border-top: 1px solid var(--border-color); padding-top: 12px; display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--text-muted);">
+        <div><strong style="color: #38bdf8;">Tip:</strong> The Excel export directly streams the entire dataset without browser memory overhead.</div>
+        <button class="btn btn-secondary btn-sm" onclick="closeKpiDatasetModal()">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Interactive Incremental Load Historic Mutation Reconciliation Modal -->
+  <div id="modal-incremental-mutation" class="lightbox-overlay" style="display: none;">
+    <div class="lightbox-dialog" style="max-width: 800px; width: 94%;">
+      <div class="lightbox-header" style="border-bottom: 1px solid var(--border-color); padding-bottom: 12px;">
+        <span class="lightbox-icon">⚠️</span>
+        <div>
+          <h3 style="margin: 0; color: #f59e0b;">Late-Arriving Updates to Historical Data Detected</h3>
+          <span style="font-size: 12px; color: var(--text-muted);">Reconciliation Alert: Incoming incremental feed contains modified versions of existing historical records</span>
+        </div>
+      </div>
+      <div class="lightbox-body" style="padding: 16px 0;">
+        <div class="info-callout" style="margin-bottom: 14px; background: rgba(245, 158, 11, 0.08); border-left: 4px solid #f59e0b; padding: 10px 14px; font-size: 12px;">
+          <strong id="mutation-alert-count">142 historical records</strong> from previous bulk loads have been updated in this incremental feed (e.g. price adjustments, returned quantities, or retroactive tier upgrades).
+        </div>
+        <h4 style="font-size: 13px; color: #38bdf8; margin: 0 0 8px 0;">Sample Mutated Historical Records:</h4>
+        <div class="table-container" style="max-height: 220px; margin-bottom: 16px;">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Encounter / PK</th>
+                <th>Item Description</th>
+                <th>Field Mutated</th>
+                <th>Historic Baseline</th>
+                <th>Incoming Incremental</th>
+                <th>Impact</th>
+              </tr>
+            </thead>
+            <tbody id="mutation-diffs-tbody"></tbody>
+          </table>
+        </div>
+        <h4 style="font-size: 13px; color: #cbd5e1; margin: 0 0 8px 0;">Select Mode of Action to Proceed:</h4>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <label style="display: flex; align-items: flex-start; gap: 10px; background: #0f172a; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color); cursor: pointer;">
+            <input type="radio" name="mutation-action" value="UPSERT_OVERWRITE" checked style="margin-top: 3px;">
+            <div>
+              <strong style="color: #34d399;">Upsert &amp; Overwrite Historical Record (Recommended)</strong>
+              <div style="font-size: 11px; color: var(--text-muted);">Reconciles the baseline by updating historical records with the late-arriving unit prices and quantities.</div>
+            </div>
+          </label>
+          <label style="display: flex; align-items: flex-start; gap: 10px; background: #0f172a; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color); cursor: pointer;">
+            <input type="radio" name="mutation-action" value="SPLIT_AUDIT_TRAIL" style="margin-top: 3px;">
+            <div>
+              <strong style="color: #38bdf8;">Split Versioned Audit Trail</strong>
+              <div style="font-size: 11px; color: var(--text-muted);">Preserves the original historical row marked as SUPERSEDED and appends a new ACTIVE version with valid date ranges.</div>
+            </div>
+          </label>
+          <label style="display: flex; align-items: flex-start; gap: 10px; background: #0f172a; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color); cursor: pointer;">
+            <input type="radio" name="mutation-action" value="PRESERVE_HISTORIC_RECORD" style="margin-top: 3px;">
+            <div>
+              <strong style="color: #f87171;">Preserve Historic Baseline</strong>
+              <div style="font-size: 11px; color: var(--text-muted);">Maintains original historical figures intact and routes incoming delta duplicates to an audit exception ledger.</div>
+            </div>
+          </label>
+        </div>
+      </div>
+      <div class="lightbox-footer" style="border-top: 1px solid var(--border-color); padding-top: 12px; display: flex; justify-content: space-between; align-items: center;">
+        <button class="btn btn-secondary" onclick="closeIncrementalMutationModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="confirmIncrementalMutationAction()">Apply Mode &amp; Merge Delta</button>
       </div>
     </div>
   </div>

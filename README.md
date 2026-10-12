@@ -9,22 +9,67 @@ An enterprise-grade, agentic AI platform engineered for **SupplyCopia** to auton
 ## 🌟 Key Capabilities
 
 1. **Autonomous Bee Swarm Architecture**:
-   - **Scout Bee**: Cloud ingestion (AWS S3) and deep schema profiling.
-   - **Architect Bee**: Autonomous relationship inference, schema drift detection, and join topology synthesis.
-   - **CodeCraft Bee**: Jinja2 & dbt SQL model generation with multi-tenant client metadata tagging.
-   - **Validation Bee**: Automated test assertions, SLA anomaly detection, and Golden Parity certification.
-2. **Multi-Tenancy Out of the Box**:
-   - Standardized `sc_multi_tenant_*` warehouse schema housing multiple hospital networks, GPOs, and ambulatory systems.
-   - Isolated client configurations under `/clients/<client_name>/`.
-3. **Execution Modes**:
-   - **Standard Mode**: Interactive step-by-step review across all stages.
-   - **User Review Mode**: Pauses at critical join and schema-change decisions for explicit data engineer sign-off.
-   - **⚡ Turbo Autonomy Mode**: End-to-end zero-click execution from raw files directly to certified marts.
-4. **Resilience & Chaos Simulation**:
-   - Built-in Chaos Simulator for testing schema perturbations across **Epic Systems**, **Oracle Cerner**, and **MEDITECH**.
-   - Automated 8-point SLA and regression test suite matrix.
-5. **Enterprise Audit & Underlying Data Export**:
-   - Multi-tab Excel export engine streaming tens of thousands of underlying exception records, item crosswalks, price spikes, and LLM telemetry.
+   - **Queen Bee Orla**: Chief Swarm Coordinator & Orchestrator. Directs stages, checkpoints, and human-in-the-loop (HITL) approval gates.
+   - **Scout Bee Buzz**: Cloud Ingestion (AWS S3) & Schema Profiler. Discovers canonical datasets and detects schema drift across hospitals.
+   - **Architect Bee Pollen**: Relationship Inference & Join Topology Synthesizer. Auto-constructs multi-tier foreign key joins and matching cascades.
+   - **Worker Bee Stitch**: CodeCraft Engineer. Generates modular Jinja2 SQL models, analytical marts, and multi-tenant metadata tagging.
+   - **Inspector Bee Guard (Sentinel Aegis)**: Parity Assurance, SLA Anomaly Detector & Auto-Resolve Diagnostics Engine.
+   - **Carrier Bee Nectar**: Enterprise Cloud Warehouse Publisher. Manages high-throughput RSA-authenticated loading into Snowflake (`SC_MULTI_TENANT_*` and `SC_FCT_*`).
+
+2. **Enterprise Multi-Tenancy & Zero-Downtime Warehouse**:
+   - Standardized `SC_MULTI_TENANT_*` warehouse schema housing multiple hospital networks, GPOs, and ambulatory systems with row-level security (RLS).
+   - Standardized common analytics marts:
+     - `SC_FCT_CONSUMPTION_COST_SAVINGS`
+     - `SC_FCT_PO_COST_SAVINGS`
+     - `SC_FCT_GAP_ANALYSIS`
+     - `SC_MULTI_TENANT_CONSUMPTION_SAVINGS`
+     - `SC_MULTI_TENANT_PO_SAVINGS`
+     - `SC_MULTI_TENANT_GAP_ANALYSIS`
+
+3. **Incremental Load Historic Mutation Reconciliation**:
+   - Detects late-arriving updates to historical records (e.g. retroactive price discounts, returned quantities).
+   - Surfaces record-level and aggregate differences in an interactive modal with 3 configurable operator resolution modes:
+     - `UPSERT_OVERWRITE`: Reconciles the baseline with late-arriving unit prices and quantities.
+     - `SPLIT_AUDIT_TRAIL`: Preserves original historical rows marked as `SUPERSEDED` and appends new `ACTIVE` versions with valid date ranges.
+     - `PRESERVE_HISTORIC_RECORD`: Retains historical baseline figures and routes delta duplicates to an audit exception ledger.
+
+4. **Interactive KPI Drill-Down & Zero-Latency Raw Excel Export**:
+   - Top KPI tiles (*Total Clinical Spend*, *Contract Match Rate*, *Savings Opportunity*, *Identified Overpayment*) feature interactive drill-down.
+   - High-density Lightbox Dialog renders sample underlying records with instant column sorting.
+   - Integrated zero-latency streaming exports full raw datasets directly to Excel (.xlsx) using Apache Arrow / OpenPyXL without browser or server memory bloat.
+
+5. **Enterprise Readiness Guardrails**:
+   - **Schema Contract Locks**: Strict JSON schema contracts enforce mandatory primary keys, field presence, and data types before staging.
+   - **Automated Cost Budget Guardrails**: Hard limits on Snowflake Cortex and external LLM credit consumption per tenant to protect operational spend.
+   - **Chaos Simulator & SLA Testing**: Synthetic perturbation engines stress-test pipelines against Epic EHR, Cerner Millennium, and MEDITECH ERP schema shifts.
+
+---
+
+## 🗂️ AWS S3 Storage & Ingestion Directory Specification
+
+For multi-tenant ingestion, AWS S3 buckets are organized under client identifiers with segregated partitions for initial historical bulk loads and scheduled incremental feeds:
+
+```text
+s3://supplycopia-dbt-ingestion/
+├── clients/
+│   ├── <client_id>/                       # e.g., CL_UCH_001 (UC Health)
+│   │   ├── initial_bulk_load/             # Initial historical multi-year baseline data
+│   │   │   ├── UHC_Consumption.csv
+│   │   │   ├── UHC_PO.csv
+│   │   │   ├── UHC_CON.csv
+│   │   │   ├── UHC_IM.csv
+│   │   │   └── UHC_INV.csv
+│   │   └── incremental_loads/             # Scheduled delta feeds partitioned by cadence
+│   │       ├── daily/
+│   │       │   └── YYYY-MM-DD/
+│   │       │       └── consumption_delta_20261012.csv
+│   │       ├── weekly/
+│   │       │   └── YYYY-WW/
+│   │       │       └── po_delta_2026_w41.csv
+│   │       └── monthly/
+│   │           └── YYYY-MM/
+│   │               └── contract_delta_202610.csv
+```
 
 ---
 
@@ -32,25 +77,32 @@ An enterprise-grade, agentic AI platform engineered for **SupplyCopia** to auton
 
 ```text
 ATB-DBT/
-├── clients/                         # Multi-tenant client workspace directories
+├── clients/                         # Multi-tenant client workspace configurations
 │   ├── uc_health/                   # UC Health System configuration & seeds
 │   │   └── client_config.json
 │   └── template_client/             # Scaffolding template for onboarding new clients
 │       └── client_config.json
 ├── autonomous_dbt_app/              # Core Agentic Platform Engine
-│   ├── agents/                      # Specialized Autonomous Bee Agents
-│   │   ├── scout_bee.py             # Schema profiling & S3 connector
-│   │   ├── architect_bee.py         # Relationship inference & topology mapping
-│   │   ├── codecraft_bee.py         # dbt model synthesis & SQL generation
-│   │   ├── enterprise_suite_agent.py# SLA detection, drift matrix, telemetry
-│   │   └── validation_bee.py        # Parity engine & quality certification
-│   ├── core/                        # Persistence & checkpoints
-│   │   ├── checkpoint_manager.py    # Auto-save & pipeline version control
-│   │   └── state_manager.py         # Reactive swarm event bus
-│   ├── orchestrator/                # Autonomous workflow pipeline orchestrators
+│   ├── agents/                      # Specialized Autonomous Bee Swarm Agents
+│   │   ├── scout_bee.py             # Scout Bee Buzz: S3 connector & profiling
+│   │   ├── architect_bee.py         # Architect Bee Pollen: Relationship & join topology
+│   │   ├── codecraft_bee.py         # Worker Bee Stitch: dbt model synthesis
+│   │   ├── enterprise_agent.py      # SLA detection, drift matrix, telemetry
+│   │   └── snowflake_agent.py       # Carrier Bee Nectar: Snowflake RSA warehouse publisher
+│   ├── core/                        # Core enterprise engine
+│   │   ├── schema_contracts.py      # Strict JSON schema contracts & header validator
+│   │   ├── cortex_client.py         # Snowflake Cortex AI client & budget guardrails
+│   │   ├── checkpoint_manager.py    # Auto-save & pipeline snapshot versioning
+│   │   ├── s3_connector.py          # AWS S3 multi-tenant bucket connector
+│   │   └── state_manager.py         # Swarm event bus & status persistence
+│   ├── orchestrator/                # Pipeline orchestrator & incremental engine
+│   │   └── pipeline_orchestrator.py # Bulk & incremental reconciliation orchestrator
 │   └── dashboard_v2/                # Real-time Web Studio (Port 8081)
-│       ├── server.py                # REST API & underlying data export engine
-│       └── static/                  # Interactive visual studio (HTML5/CSS3/Vanilla JS)
+│       ├── server.py                # REST API, KPI preview & Excel streaming engine
+│       ├── app.js                   # Interactive client application
+│       ├── index.html               # 6-Stage Web Studio layout & modal dialogs
+│       └── style.css                # Dark enterprise UI styles & interactive effects
+├── verify_snowflake_parity.py       # Automated 100% apples-to-apples parity certification
 ├── requirements.txt                 # Python dependencies
 └── README.md                        # Platform documentation
 ```
@@ -73,19 +125,22 @@ pip install -r requirements.txt
 ```
 
 ### 3. Environment Variables
-Create a local `.env` file in the root directory (never commit this file):
+Configure your `.env` file in the project root:
 ```bash
-# OpenAI LLM Key (Optional - Fallbacks to deterministic fuzzy matching if omitted)
-OPENAI_API_KEY=your_openai_key
-OPENAI_MODEL=gpt-5.6-luna
-
 # Snowflake Enterprise Credentials
 SNOWFLAKE_USER=SA_MS_Lambda
-SNOWFLAKE_ACCOUNT=your_account
+SNOWFLAKE_ACCOUNT=NBNAETU-CS50192
 SNOWFLAKE_ROLE=DB_SUPPLYCOPIA_TRANSFORM_ETL
 SNOWFLAKE_WAREHOUSE=DATAMANAGEMENT_WH
 SNOWFLAKE_DATABASE=SUPPLYCOPIA_TRANSFORM
 SNOWFLAKE_SCHEMA=SCRETAIL_IMPORT
+PRIVATE_KEY_PATH=/absolute/path/to/lambda_migration._rsa_key.p8
+
+# AWS S3 Ingestion Credentials
+AWS_ACCESS_KEY_ID=AKIA...
+AWS_SECRET_ACCESS_KEY=...
+AWS_DEFAULT_REGION=us-east-2
+S3_DEFAULT_BUCKET=supplycopia-dbt-ingestion
 ```
 
 ### 4. Running the Autonomous Studio
@@ -95,30 +150,18 @@ python3 -m autonomous_dbt_app.dashboard_v2.server
 ```
 Open your browser to: **`http://localhost:8081`**
 
----
-
-## 🏢 Onboarding a New Client
-
-To onboard a new health system (e.g., `mercy_health`):
-
-1. **Create the client profile**:
-   ```bash
-   cp -r clients/template_client clients/mercy_health
-   ```
-2. **Update `clients/mercy_health/client_config.json`**:
-   - Set `client_id`, `client_name`, and `client_type`.
-   - Specify the incoming raw file names or S3 bucket path.
-3. **Run Ingestion in the Studio**:
-   - Provide the S3 folder or local directory in Stage 1.
-   - Scout Bee will automatically profile columns and recommend mappings.
-   - Run in **⚡ Turbo Mode** for hands-off autonomous compilation and Snowflake delivery!
+### 5. Running Snowflake Parity Verification
+Verify 100% apples-to-apples parity against baseline Snowflake tables:
+```bash
+python3 verify_snowflake_parity.py
+```
 
 ---
 
 ## 🔒 Security & Data Governance
 - Sensitive credentials (`.env`, `*.p8`, `*.pem`, `*.key`) are strictly gitignored.
-- Raw clinical and spend files (`*.csv`, `*.parquet`, DuckDB binary lakes) are kept outside source control.
-- All marts feature automated SupplyCopia multi-tenant identifiers (`tenant_client_id`, `tenant_client_name`, `tenant_client_type`) ensuring cross-tenant isolation in shared Snowflake tables.
+- Raw clinical and spend datasets (`*.csv`, `*.parquet`, DuckDB binaries) remain outside version control.
+- Automated Row-Level Security (RLS) policies isolate client data in shared Snowflake tables.
 
 ---
 

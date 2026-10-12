@@ -72,26 +72,8 @@ class SnowflakeAgent:
             ctx.cursor().execute(f"USE DATABASE {SNOWFLAKE_DATABASE}")
             ctx.cursor().execute(f"USE SCHEMA {SNOWFLAKE_DATABASE}.{SNOWFLAKE_SCHEMA}")
         except Exception as conn_err:
-            # Fallback to local high-performance Snowflake staging parquet export
-            staged_sf_dir = Path(duckdb_path).parent / "snowflake_staged"
-            staged_sf_dir.mkdir(parents=True, exist_ok=True)
-            con_duck = duckdb.connect(str(duckdb_path), read_only=True)
-            for duck_tbl, sf_tbl in table_mappings:
-                parquet_out = staged_sf_dir / f"{sf_tbl}.parquet"
-                con_duck.execute(f"COPY {duck_tbl} TO '{parquet_out}' (FORMAT PARQUET, COMPRESSION ZSTD);")
-                cnt = con_duck.execute(f"SELECT count(*) FROM {duck_tbl}").fetchone()[0]
-                report["exported_tables"].append({
-                    "source_table": duck_tbl,
-                    "target_table": sf_tbl,
-                    "rows_written": cnt,
-                    "chunks": 1,
-                    "duration_sec": 0.15,
-                    "success": True,
-                    "staged_path": str(parquet_out)
-                })
-            con_duck.close()
-            report["status"] = "SUCCESS"
-            report["note"] = f"Staged to {staged_sf_dir} (Ready for Snowflake bulk COPY / DevOps token update: {str(conn_err)[:60]}...)"
+            report["status"] = "ERROR"
+            report["error"] = f"Failed to connect to Snowflake: {str(conn_err)}"
             return report
 
         con_duck = duckdb.connect(str(duckdb_path), read_only=True)

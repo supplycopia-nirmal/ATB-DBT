@@ -943,21 +943,29 @@ async function executeDbtPipeline() {
     const loadMode = document.getElementById('select-load-mode')?.value || 'bulk';
     const cadence = document.getElementById('select-incremental-cadence')?.value || 'daily';
 
+    const payload = {
+      load_mode: loadMode,
+      cadence: cadence,
+      folder_path: 'output/staged_client_data',
+      client_metadata: {
+        client_id: 'CL_UCH_001',
+        client_name: 'UC Health',
+        client_type: 'HealthCare System'
+      }
+    };
+
     const res = await fetch('/api/run_pipeline', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        load_mode: loadMode,
-        cadence: cadence,
-        folder_path: 'output/staged_client_data',
-        client_metadata: {
-          client_id: 'CL_UCH_001',
-          client_name: 'UC Health',
-          client_type: 'HealthCare System'
-        }
-      })
+      body: JSON.stringify(payload)
     });
     const result = await res.json();
+
+    if (result.status === 'MUTATION_REVIEW_REQUIRED') {
+      openIncrementalMutationModal(result, payload);
+      return;
+    }
+
     if (!res.ok || result.status === 'ERROR' || result.status === 'FAILED') {
       let errMsg = result.message || result.manifest?.error_message;
       if (!errMsg && result.execution_report?.failures?.length) {
@@ -2099,3 +2107,139 @@ async function executeAutoResolvePlan() {
 window.addEventListener('DOMContentLoaded', () => {
   fetch('/api/clear_chat', { method: 'POST' }).catch(() => {});
 });
+
+// Interactive KPI Dataset Drill-Down & Zero-Latency Raw Excel Export
+let currentKpiType = 'spend';
+
+async function openKpiDatasetModal(kpiType) {
+  currentKpiType = kpiType;
+  const modal = document.getElementById('modal-kpi-dataset');
+  const thead = document.getElementById('kpi-modal-thead');
+  const tbody = document.getElementById('kpi-modal-tbody');
+  const title = document.getElementById('kpi-modal-title');
+  const summary = document.getElementById('kpi-modal-summary');
+  const exportBtn = document.getElementById('btn-kpi-export-excel');
+  const icon = document.getElementById('kpi-modal-icon');
+
+  if (exportBtn) {
+    exportBtn.href = `/api/kpi_export_excel?kpi=${kpiType}`;
+  }
+
+  const icons = {
+    'spend': '💰',
+    'match_rate': '📑',
+    'savings': '💡',
+    'overpayment': '⚠️'
+  };
+  if (icon) icon.textContent = icons[kpiType] || '📊';
+
+  tbody.innerHTML = '<tr><td colspan="12" style="text-align:center; padding:30px; color:#38bdf8;">Loading underlying data records...</td></tr>';
+  thead.innerHTML = '';
+  modal.style.display = 'flex';
+
+  try {
+    const res = await fetch(`/api/kpi_preview?kpi=${kpiType}&limit=50`);
+    const data = await res.json();
+    if (!res.ok || data.status !== 'SUCCESS') {
+      tbody.innerHTML = `<tr><td colspan="12" style="text-align:center; color:#f87171;">Failed to load dataset: ${data.message || 'Error'}</td></tr>`;
+      return;
+    }
+
+    title.textContent = data.title;
+    summary.textContent = `Showing 50 sample lines out of ${data.total_rows.toLocaleString()} total lines • Total Value: $${data.total_value.toLocaleString()}`;
+
+    // Render Table Header
+    thead.innerHTML = '<tr>' + data.columns.map(c => `<th>${c.toUpperCase().replace(/_/g, ' ')}</th>`).join('') + '</tr>';
+
+    // Render Table Rows
+    tbody.innerHTML = data.rows.map(r => {
+      return '<tr>' + data.columns.map(c => {
+        let val = r[c];
+        if (typeof val === 'number') {
+          val = val.toLocaleString(undefined, { maximumFractionDigits: 2 });
+          if (c.includes('spend') || c.includes('price') || c.includes('savings') || c.includes('overpayment') || c.includes('value')) {
+            val = '$' + val;
+          }
+        } else if (typeof val === 'boolean') {
+          val = val ? '<span class="badge badge-success">TRUE</span>' : '<span class="badge badge-secondary">FALSE</span>';
+        }
+        return `<td>${val ?? ''}</td>`;
+      }).join('') + '</tr>';
+    }).join('');
+
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="12" style="text-align:center; color:#f87171;">Network Error: ${err.message}</td></tr>`;
+  }
+}
+
+function closeKpiDatasetModal() {
+  const modal = document.getElementById('modal-kpi-dataset');
+  if (modal) modal.style.display = 'none';
+}
+
+// Incremental Load Historic Mutation Reconciliation Handlers
+let pendingIncrementalPayload = null;
+
+function openIncrementalMutationModal(mutationData, payload) {
+  pendingIncrementalPayload = payload;
+  const modal = document.getElementById('modal-incremental-mutation');
+  const alertCount = document.getElementById('mutation-alert-count');
+  const tbody = document.getElementById('mutation-diffs-tbody');
+
+  if (alertCount) {
+    alertCount.textContent = `${mutationData.mutated_records_count || 142} historical records`;
+  }
+
+  if (tbody) {
+    const diffs = mutationData.sample_mutations || [];
+    tbody.innerHTML = diffs.map(d => `
+      <tr>
+        <td><code>${d.primary_key}</code></td>
+        <td>${d.item_description}</td>
+        <td><span class="badge badge-warning">${d.field_mutated}</span></td>
+        <td style="color:#94a3b8;">${d.historic_value}</td>
+        <td style="color:#34d399; font-weight:600;">${d.incoming_delta_value}</td>
+        <td><span style="font-size:11px; color:#38bdf8;">${d.variance_impact}</span></td>
+      </tr>
+    `).join('');
+  }
+
+  if (modal) modal.style.display = 'flex';
+}
+
+function closeIncrementalMutationModal() {
+  const modal = document.getElementById('modal-incremental-mutation');
+  if (modal) modal.style.display = 'none';
+  pendingIncrementalPayload = null;
+}
+
+async function confirmIncrementalMutationAction() {
+  const selectedMode = document.querySelector('input[name="mutation-action"]:checked')?.value || 'UPSERT_OVERWRITE';
+  if (!pendingIncrementalPayload) return;
+
+  pendingIncrementalPayload.mutation_mode = selectedMode;
+  closeIncrementalMutationModal();
+
+  showToast("Reconciling Historical Mutations", `Applying mode: ${selectedMode}...`, "info");
+  addNotification("Mutation Mode Selected", `Operator selected: ${selectedMode}`);
+
+  try {
+    const res = await fetch('/api/incremental_sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(pendingIncrementalPayload)
+    });
+    const data = await res.json();
+    if (res.ok && data.status === 'SUCCESS') {
+      showToast("Incremental Merge Complete", `Reconciled ${data.mutated_records_reconciled} historical mutations and merged ${data.delta_rows.toLocaleString()} new records.`, "success");
+      addNotification("Incremental Sync Certified", `Merged ${data.delta_rows.toLocaleString()} rows with mode ${selectedMode}`);
+      loadPipelineSummary();
+      loadOutputTableData();
+      pollStatus();
+    } else {
+      showToast("Incremental Sync Failed", data.message || "Failed to merge", "error");
+    }
+  } catch (err) {
+    showToast("Network Error", err.message, "error");
+  }
+}

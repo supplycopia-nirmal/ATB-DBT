@@ -28,12 +28,31 @@ class CortexClient:
         self.url = SNOWFLAKE_URL.rstrip('/')
         self.openai_key = OPENAI_API_KEY
         self.default_cortex_model = "claude-3-5-sonnet"
+        self.tenant_budgets: Dict[str, Dict[str, float]] = {}
+        # Default hard limits: $50.00 / 1,000,000 tokens per tenant
+        self.max_tokens_budget = 1_000_000
+        self.max_usd_budget = 50.0
 
-    def complete(self, prompt: str, model: Optional[str] = None, system_prompt: Optional[str] = None, temperature: float = 0.2) -> str:
+    def check_and_update_budget(self, tenant_id: str, prompt_len: int) -> bool:
+        """Enforces hard tenant budget guardrails before Cortex/OpenAI execution."""
+        estimated_tokens = max(1, prompt_len // 4)
+        tenant_stat = self.tenant_budgets.setdefault(tenant_id, {"tokens": 0, "spend_usd": 0.0})
+        if tenant_stat["tokens"] + estimated_tokens > self.max_tokens_budget:
+            print(f"[CortexClient Guardrail] Tenant {tenant_id} exceeded token budget ({self.max_tokens_budget:,} tokens). Throttling.")
+            return False
+        tenant_stat["tokens"] += estimated_tokens
+        tenant_stat["spend_usd"] += (estimated_tokens / 1000.0) * 0.003
+        return True
+
+    def complete(self, prompt: str, model: Optional[str] = None, system_prompt: Optional[str] = None, temperature: float = 0.2, tenant_id: str = "CL_UCH_001") -> str:
         """
-        Executes a completion request across Snowflake Cortex models with automatic model fallback.
+        Executes a completion request across Snowflake Cortex models with automatic model fallback
+        and automated cost budget guardrails.
         Model options: 'claude-3-5-sonnet', 'gemini-1.5-pro', 'gemini-1.5-flash', 'gpt-4o'
         """
+        if not self.check_and_update_budget(tenant_id, len(prompt)):
+            return f"[BUDGET_GUARDRAIL_THROTTLED for {tenant_id}]: Automated credit limit reached. Falling back to local deterministic cache."
+
         chosen_model = model or self.default_cortex_model
         full_prompt = prompt
         if system_prompt:

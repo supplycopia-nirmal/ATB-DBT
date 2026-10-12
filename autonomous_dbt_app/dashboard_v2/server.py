@@ -85,6 +85,13 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         elif path == "/api/simulate_chaos":
             archetype = params.get("archetype", ["epic_ehr"])[0]
             self._handle_simulate_chaos(archetype)
+        elif path == "/api/kpi_preview":
+            kpi_type = params.get("kpi", ["spend"])[0]
+            limit = int(params.get("limit", [50])[0])
+            self._handle_kpi_preview(kpi_type, limit)
+        elif path == "/api/kpi_export_excel":
+            kpi_type = params.get("kpi", ["spend"])[0]
+            self._handle_kpi_export_excel(kpi_type)
         elif path.startswith('/dbt-docs'):
             self._handle_dbt_docs(path)
         else:
@@ -109,11 +116,12 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             load_mode = payload.get("load_mode", "bulk")
             cadence = payload.get("cadence", "daily")
             folder = payload.get("folder_path", str(BASE_DATA_DIR))
+            mutation_mode = payload.get("mutation_mode")
             baseline = PROJECT_ROOT / "uc_health" / "uc_health.duckdb"
             client_metadata = payload.get("client_metadata")
             try:
                 if load_mode == "incremental":
-                    res = orchestrator.run_incremental_load(Path(folder), client_metadata=client_metadata, cadence=cadence)
+                    res = orchestrator.run_incremental_load(Path(folder), client_metadata=client_metadata, cadence=cadence, mutation_mode=mutation_mode)
                 else:
                     res = orchestrator.run_full_pipeline(Path(folder), client_metadata=client_metadata, baseline_db_path=baseline)
                 self._send_json(res)
@@ -123,8 +131,9 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             cadence = payload.get("cadence", "daily")
             client_metadata = payload.get("client_metadata")
             folder = payload.get("folder_path", str(BASE_DATA_DIR))
+            mutation_mode = payload.get("mutation_mode")
             try:
-                res = orchestrator.run_incremental_load(Path(folder), client_metadata=client_metadata, cadence=cadence)
+                res = orchestrator.run_incremental_load(Path(folder), client_metadata=client_metadata, cadence=cadence, mutation_mode=mutation_mode)
                 self._send_json(res)
             except Exception as e:
                 self._send_json({"status": "ERROR", "message": str(e)}, status=500)
@@ -1261,6 +1270,182 @@ Provide a helpful, precise, professional, and knowledgeable answer as the Ask Th
 
         except Exception as e:
             self._send_json({"error": f"Failed to generate Excel export: {str(e)}"}, status=500)
+
+    def _handle_kpi_preview(self, kpi_type: str, limit: int = 50):
+        """Returns JSON preview of underlying DuckDB records driving top KPI tiles."""
+        auto_db = OUTPUT_DIR / "autonomous_pipeline.duckdb"
+        if not auto_db.exists():
+            self._send_json({"error": "Pipeline database not yet compiled"}, status=404)
+            return
+
+        con = duckdb.connect(str(auto_db), read_only=True)
+        try:
+            if kpi_type == "spend":
+                title = "Total Clinical Spend - Underlying Encounter Items"
+                query = f"""
+                    SELECT 
+                        row_id, case_id, facility, drg_code, primary_procedure_group,
+                        item_number, item_description, supplier, supply_unit_price, total_quantity, line_spend,
+                        is_contract_matched
+                    FROM fct_consumption_cost_savings_v4
+                    WHERE line_spend > 0
+                    ORDER BY line_spend DESC
+                    LIMIT {limit};
+                """
+                cnt_query = "SELECT count(*), round(sum(line_spend), 2) FROM fct_consumption_cost_savings_v4 WHERE line_spend > 0;"
+            elif kpi_type == "match_rate":
+                title = "Contract Match Rate - Reconciled Contract Records"
+                query = f"""
+                    SELECT 
+                        row_id, case_id, facility, contract_number, matched_item_id,
+                        item_description, supplier, supply_unit_price, contract_ea_price, total_quantity, line_spend,
+                        contract_match_tier, contract_match_rule
+                    FROM fct_consumption_cost_savings_v4
+                    WHERE is_contract_matched = true
+                    ORDER BY line_spend DESC
+                    LIMIT {limit};
+                """
+                cnt_query = "SELECT count(*), round(sum(line_spend), 2) FROM fct_consumption_cost_savings_v4 WHERE is_contract_matched = true;"
+            elif kpi_type == "savings":
+                title = "Savings Opportunity - Benchmark & Price Variance Realization"
+                query = f"""
+                    SELECT 
+                        row_id, case_id, facility, primary_procedure_group, item_number,
+                        item_description, supplier, supply_unit_price, contract_ea_price, total_quantity, line_spend,
+                        savings_opportunity
+                    FROM fct_consumption_cost_savings_v4
+                    WHERE savings_opportunity > 0
+                    ORDER BY savings_opportunity DESC
+                    LIMIT {limit};
+                """
+                cnt_query = "SELECT count(*), round(sum(savings_opportunity), 2) FROM fct_consumption_cost_savings_v4 WHERE savings_opportunity > 0;"
+            else: # overpayment
+                title = "Identified Overpayment - Price Variance > Contract Price"
+                query = f"""
+                    SELECT 
+                        row_id, case_id, facility, contract_number, item_number,
+                        item_description, supplier, supply_unit_price, contract_ea_price, total_quantity,
+                        round((supply_unit_price - contract_ea_price) * total_quantity, 2) as overpayment_amount
+                    FROM fct_consumption_cost_savings_v4
+                    WHERE contract_ea_price > 0 AND supply_unit_price > contract_ea_price
+                    ORDER BY overpayment_amount DESC
+                    LIMIT {limit};
+                """
+                cnt_query = "SELECT count(*), round(sum((supply_unit_price - contract_ea_price) * total_quantity), 2) FROM fct_consumption_cost_savings_v4 WHERE contract_ea_price > 0 AND supply_unit_price > contract_ea_price;"
+
+            df = con.execute(query).fetchdf()
+            total_stats = con.execute(cnt_query).fetchone()
+            columns = list(df.columns)
+            rows = df.to_dict(orient="records")
+
+            self._send_json({
+                "status": "SUCCESS",
+                "kpi_type": kpi_type,
+                "title": title,
+                "total_rows": total_stats[0] if total_stats else 0,
+                "total_value": total_stats[1] if total_stats else 0.0,
+                "columns": columns,
+                "rows": rows,
+                "limit": limit
+            })
+        except Exception as e:
+            self._send_json({"status": "ERROR", "message": str(e)}, status=500)
+        finally:
+            con.close()
+
+    def _handle_kpi_export_excel(self, kpi_type: str):
+        """Streams full underlying raw dataset to Excel with zero server latency."""
+        import io
+        import pandas as pd
+        auto_db = OUTPUT_DIR / "autonomous_pipeline.duckdb"
+        if not auto_db.exists():
+            self._send_json({"error": "Pipeline database not found"}, status=404)
+            return
+
+        con = duckdb.connect(str(auto_db), read_only=True)
+        try:
+            if kpi_type == "spend":
+                sheet_name = "Clinical Spend Lines"
+                filename = f"SupplyCopia_Total_Clinical_Spend_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+                query = """
+                    SELECT 
+                        row_id as "Row ID", case_id as "Case ID", facility as "Facility", 
+                        drg_code as "DRG Code", primary_procedure_group as "Procedure Group",
+                        item_number as "Item Number", item_description as "Item Description", 
+                        supplier as "Supplier", supply_unit_price as "Unit Price ($)", 
+                        total_quantity as "Quantity", line_spend as "Line Spend ($)",
+                        is_contract_matched as "On Contract"
+                    FROM fct_consumption_cost_savings_v4
+                    WHERE line_spend > 0
+                    ORDER BY line_spend DESC
+                    LIMIT 200000;
+                """
+            elif kpi_type == "match_rate":
+                sheet_name = "On-Contract Lines"
+                filename = f"SupplyCopia_Contract_Matched_Lines_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+                query = """
+                    SELECT 
+                        row_id as "Row ID", case_id as "Case ID", facility as "Facility", 
+                        contract_number as "Contract Number", matched_item_id as "Item ID",
+                        item_description as "Item Description", supplier as "Supplier", 
+                        supply_unit_price as "Billed Price ($)", contract_ea_price as "Contract Price ($)", 
+                        total_quantity as "Quantity", line_spend as "Line Spend ($)",
+                        contract_match_tier as "Match Tier", contract_match_rule as "Match Rule"
+                    FROM fct_consumption_cost_savings_v4
+                    WHERE is_contract_matched = true
+                    ORDER BY line_spend DESC
+                    LIMIT 200000;
+                """
+            elif kpi_type == "savings":
+                sheet_name = "Savings Opportunities"
+                filename = f"SupplyCopia_Savings_Opportunity_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+                query = """
+                    SELECT 
+                        row_id as "Row ID", case_id as "Case ID", facility as "Facility", 
+                        primary_procedure_group as "Procedure Group", item_number as "Item Number",
+                        item_description as "Item Description", supplier as "Supplier", 
+                        supply_unit_price as "Billed Price ($)", contract_ea_price as "Contract Price ($)", 
+                        total_quantity as "Quantity", line_spend as "Line Spend ($)",
+                        savings_opportunity as "Savings Opportunity ($)"
+                    FROM fct_consumption_cost_savings_v4
+                    WHERE savings_opportunity > 0
+                    ORDER BY savings_opportunity DESC
+                    LIMIT 200000;
+                """
+            else: # overpayment
+                sheet_name = "Identified Overpayments"
+                filename = f"SupplyCopia_Identified_Overpayments_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+                query = """
+                    SELECT 
+                        row_id as "Row ID", case_id as "Case ID", facility as "Facility", 
+                        contract_number as "Contract Number", item_number as "Item Number",
+                        item_description as "Item Description", supplier as "Supplier", 
+                        supply_unit_price as "Billed Price ($)", contract_ea_price as "Contract Price ($)", 
+                        total_quantity as "Quantity",
+                        round((supply_unit_price - contract_ea_price) * total_quantity, 2) as "Overpayment Amount ($)"
+                    FROM fct_consumption_cost_savings_v4
+                    WHERE contract_ea_price > 0 AND supply_unit_price > contract_ea_price
+                    ORDER BY "Overpayment Amount ($)" DESC
+                    LIMIT 200000;
+                """
+
+            df = con.execute(query).fetchdf()
+            con.close()
+
+            buf = io.BytesIO()
+            with pd.ExcelWriter(buf, engine='openpyxl') as writer:
+                df.to_excel(writer, index=False, sheet_name=sheet_name)
+
+            excel_data = buf.getvalue()
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            self.send_header('Content-Disposition', f'attachment; filename="{filename}"')
+            self.send_header('Content-Length', str(len(excel_data)))
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(excel_data)
+        except Exception as e:
+            self._send_json({"error": f"Failed to stream KPI Excel export: {str(e)}"}, status=500)
 
     def _handle_run_test_suite(self):
         auto_db = OUTPUT_DIR / "autonomous_pipeline.duckdb"
