@@ -65,16 +65,16 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         self.wfile.write(html.encode('utf-8'))
 
     def do_HEAD(self):
-        if not self._check_auth():
-            self._send_auth_required()
-            return
         self.do_GET()
 
     def do_GET(self):
-        # Allow favicon and logo without challenge so browser icon displays cleanly
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
-        if path not in ["/favicon.ico", "/favicon.png", "/logo.png"]:
+
+        # Static web assets (CSS, JS, logos, icons) must load freely or with credentials
+        is_static_asset = path in ["/style.css", "/app.js", "/favicon.ico", "/favicon.png", "/logo.png"] or path.endswith((".css", ".js", ".png", ".jpg", ".svg", ".woff2", ".ttf"))
+
+        if not is_static_asset:
             if not self._check_auth():
                 self._send_auth_required()
                 return
