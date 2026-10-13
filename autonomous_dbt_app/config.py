@@ -46,3 +46,15 @@ APP_AUTH_PASSWORD = os.getenv("APP_AUTH_PASSWORD", "SupplyCopia@2026")
 # SupplyCopia Canonical Required vs Optional Entities
 REQUIRED_ENTITIES = ["consumption", "purchase_orders"]
 OPTIONAL_ENTITIES = ["item_master", "contracts", "invoices", "inventory", "vendor_alias", "facility_mapping"]
+
+# Atlassian (Confluence & Jira) Configuration
+ATLASSIAN_DOMAIN = os.getenv("ATLASSIAN_DOMAIN", "https://supplycopia.atlassian.net").rstrip("/")
+ATLASSIAN_EMAIL = os.getenv("ATLASSIAN_EMAIL", "nrayan@supplycopia.com")
+CONFLUENCE_SPACE_KEY = os.getenv("CONFLUENCE_SPACE_KEY", "ATBDBT")
+CONFLUENCE_API_TOKEN = os.getenv("CONFLUENCE_API_TOKEN", "")
+JIRA_PROJECT_KEY = os.getenv("JIRA_PROJECT_KEY", "ATBDBT")
+JIRA_API_TOKEN = os.getenv("JIRA_API_TOKEN", "")
+
+# User Activity Logging Configuration
+ACTIVITY_LOG_RETENTION_DAYS = int(os.getenv("ACTIVITY_LOG_RETENTION_DAYS", "90"))
+ACTIVITY_LOG_DB_PATH = ROOT_DIR / "agent_memory" / "activity_audit_logs.db"

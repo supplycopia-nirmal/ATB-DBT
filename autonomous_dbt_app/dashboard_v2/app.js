@@ -3377,4 +3377,436 @@ function exportRecordDriftExcel() {
   window.location.href = `/api/enterprise/export_excel?dataset=record_drift&client_id=CL_UCH_001&entity=${encodeURIComponent(entity)}`;
 }
 
+// ============================================================================
+// Enterprise Profile Dropdown & Modal Controllers
+// (User Activity Logs, Confluence Docs, Jira Tracker)
+// ============================================================================
+
+function toggleUserProfileDropdown(event) {
+  if (event) event.stopPropagation();
+  const dropdown = document.getElementById('user-profile-dropdown');
+  const badge = document.getElementById('user-profile-badge');
+  if (dropdown) {
+    const isOpen = dropdown.classList.contains('open');
+    if (isOpen) {
+      dropdown.classList.remove('open');
+      if (badge) badge.classList.remove('active');
+    } else {
+      dropdown.classList.add('open');
+      if (badge) badge.classList.add('active');
+    }
+  }
+}
+
+function closeUserProfileDropdown() {
+  const dropdown = document.getElementById('user-profile-dropdown');
+  const badge = document.getElementById('user-profile-badge');
+  if (dropdown) dropdown.classList.remove('open');
+  if (badge) badge.classList.remove('active');
+}
+
+// Close profile dropdown when clicking outside
+document.addEventListener('click', (e) => {
+  const wrapper = document.getElementById('user-profile-wrapper');
+  if (wrapper && !wrapper.contains(e.target)) {
+    closeUserProfileDropdown();
+  }
+});
+
+// ----------------------------------------------------------------------------
+// 1. User Activity & Audit Logs Controller (Max 90-Day Strict Retention)
+// ----------------------------------------------------------------------------
+let actCurrentPage = 0;
+const ACT_PAGE_SIZE = 50;
+let actSearchDebounceTimer = null;
+
+function openActivityLogsModal() {
+  closeUserProfileDropdown();
+  const modal = document.getElementById('modal-activity-logs');
+  if (modal) {
+    modal.classList.add('open');
+    modal.style.display = 'flex';
+  }
+  loadActivityMetrics();
+  loadActivityLogs(true);
+}
+
+function closeActivityLogsModal() {
+  const modal = document.getElementById('modal-activity-logs');
+  if (modal) {
+    modal.classList.remove('open');
+    modal.style.display = 'none';
+  }
+}
+
+async function loadActivityMetrics() {
+  try {
+    const res = await fetch('/api/activity_logs/metrics');
+    if (!res.ok) return;
+    const data = await res.json();
+    const setVal = (id, val) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = val;
+    };
+    setVal('act-metric-total', Number(data.total_logs || 0).toLocaleString());
+    setVal('act-metric-today', Number(data.events_today || 0).toLocaleString());
+    setVal('act-metric-users', Number(data.active_users || 0).toLocaleString());
+    setVal('act-metric-size', data.db_size_human || '0 KB');
+  } catch (err) {
+    console.error('Failed to load activity metrics:', err);
+  }
+}
+
+function handleActivitySearchDebounced() {
+  if (actSearchDebounceTimer) clearTimeout(actSearchDebounceTimer);
+  actSearchDebounceTimer = setTimeout(() => {
+    loadActivityLogs(true);
+  }, 300);
+}
+
+async function loadActivityLogs(resetPage = false) {
+  if (resetPage) actCurrentPage = 0;
+  const tbody = document.getElementById('activity-table-body');
+  if (!tbody) return;
+
+  const searchInput = document.getElementById('act-filter-search');
+  const actionSelect = document.getElementById('act-filter-action');
+  const statusSelect = document.getElementById('act-filter-status');
+
+  const q = searchInput ? searchInput.value.trim() : '';
+  const action = actionSelect ? actionSelect.value : '';
+  const status = statusSelect ? statusSelect.value : '';
+
+  const params = new URLSearchParams();
+  params.append('limit', ACT_PAGE_SIZE.toString());
+  params.append('offset', (actCurrentPage * ACT_PAGE_SIZE).toString());
+  if (q) params.append('q', q);
+  if (action) params.append('action', action);
+  if (status) params.append('status', status);
+
+  try {
+    const res = await fetch(`/api/activity_logs?${params.toString()}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const logs = data.logs || [];
+    const total = data.total || 0;
+
+    if (logs.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #94a3b8; padding: 24px;">No activity logs found matching the filter criteria.</td></tr>`;
+    } else {
+      tbody.innerHTML = logs.map(l => {
+        const statusClass = l.status === 'SUCCESS' ? 'badge-success' : (l.status === 'ERROR' ? 'badge-danger' : 'badge-warning');
+        return `
+          <tr>
+            <td style="font-family: var(--font-mono); font-size: 11px; color: #94a3b8;">${escapeHtml(l.timestamp)}</td>
+            <td class="user-cell">👤 ${escapeHtml(l.user_id)}</td>
+            <td style="font-family: var(--font-mono); font-size: 11px; color: #cbd5e1;">${escapeHtml(l.ip_address || '-')}</td>
+            <td class="action-cell"><code>${escapeHtml(l.action)}</code></td>
+            <td><span class="badge ${statusClass}" style="font-size: 10px;">${escapeHtml(l.status)}</span></td>
+            <td style="font-size: 11.5px; color: #cbd5e1; word-break: break-all;">${escapeHtml(l.details || '-')}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    // Pagination info
+    const info = document.getElementById('act-pagination-info');
+    if (info) {
+      const start = total === 0 ? 0 : actCurrentPage * ACT_PAGE_SIZE + 1;
+      const end = Math.min((actCurrentPage + 1) * ACT_PAGE_SIZE, total);
+      info.textContent = `Showing ${start} - ${end} of ${total} logs (Max retention: 90 days)`;
+    }
+
+    const prevBtn = document.getElementById('btn-act-prev');
+    const nextBtn = document.getElementById('btn-act-next');
+    if (prevBtn) prevBtn.disabled = actCurrentPage === 0;
+    if (nextBtn) nextBtn.disabled = (actCurrentPage + 1) * ACT_PAGE_SIZE >= total;
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #ef4444; padding: 24px;">Error loading activity logs: ${escapeHtml(err.message)}</td></tr>`;
+  }
+}
+
+function loadPreviousActivityPage() {
+  if (actCurrentPage > 0) {
+    actCurrentPage--;
+    loadActivityLogs(false);
+  }
+}
+
+function loadNextActivityPage() {
+  actCurrentPage++;
+  loadActivityLogs(false);
+}
+
+function exportActivityLogsCsv() {
+  showToast('Exporting Audit Logs', 'Downloading CSV activity audit trail...', 'info');
+  window.location.href = '/api/activity_logs/export';
+}
+
+async function purgeActivityLogsPrompt() {
+  const defaultDays = 90;
+  const input = prompt('Purge activity logs older than how many days? (Maximum allowed retention is strictly 90 days):', defaultDays.toString());
+  if (!input) return;
+  const parsedDays = parseInt(input, 10);
+  if (isNaN(parsedDays) || parsedDays < 1) {
+    alert('Please enter a valid positive number of days.');
+    return;
+  }
+  const days = Math.min(parsedDays, 90);
+
+  try {
+    showToast('Purging Logs', `Purging audit records older than ${days} days...`, 'info');
+    const res = await fetch('/api/activity_logs/purge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ days })
+    });
+    const result = await res.json();
+    if (result.status === 'SUCCESS') {
+      showToast('Purge Complete', `Purged ${result.purged_count} records. Policy max 90 days maintained.`, 'success');
+      loadActivityMetrics();
+      loadActivityLogs(true);
+    } else {
+      showToast('Purge Failed', result.message || 'Unable to purge records', 'error');
+    }
+  } catch (err) {
+    showToast('Purge Error', err.message, 'error');
+  }
+}
+
+// ----------------------------------------------------------------------------
+// 2. Confluence Technical Documentation Controller (Space: ATBDBT)
+// ----------------------------------------------------------------------------
+let confluencePagesCache = [];
+let activeConfluenceIndex = 0;
+
+function openConfluenceModal() {
+  closeUserProfileDropdown();
+  const modal = document.getElementById('modal-confluence-docs');
+  if (modal) {
+    modal.classList.add('open');
+    modal.style.display = 'flex';
+  }
+  loadConfluenceDocs();
+}
+
+function closeConfluenceModal() {
+  const modal = document.getElementById('modal-confluence-docs');
+  if (modal) {
+    modal.classList.remove('open');
+    modal.style.display = 'none';
+  }
+}
+
+async function loadConfluenceDocs() {
+  const nav = document.getElementById('confluence-nav-list');
+  if (nav) nav.innerHTML = '<div class="loading">Loading technical documentation...</div>';
+
+  try {
+    const res = await fetch('/api/confluence/pages');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    confluencePagesCache = data.pages || [];
+
+    if (confluencePagesCache.length === 0) {
+      if (nav) nav.innerHTML = '<div style="color:#94a3b8; padding:12px;">No documentation chapters generated.</div>';
+      return;
+    }
+
+    renderConfluenceNav();
+    selectConfluenceChapter(0);
+  } catch (err) {
+    if (nav) nav.innerHTML = `<div style="color:#ef4444; padding:12px;">Error: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+function renderConfluenceNav() {
+  const nav = document.getElementById('confluence-nav-list');
+  if (!nav) return;
+  nav.innerHTML = confluencePagesCache.map((pg, idx) => `
+    <div class="confluence-nav-item ${idx === activeConfluenceIndex ? 'active' : ''}" onclick="selectConfluenceChapter(${idx})">
+      <span>📖</span>
+      <span style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(pg.title)}</span>
+    </div>
+  `).join('');
+}
+
+function selectConfluenceChapter(index) {
+  activeConfluenceIndex = index;
+  renderConfluenceNav();
+  const pane = document.getElementById('confluence-content-pane');
+  if (!pane || !confluencePagesCache[index]) return;
+
+  const pg = confluencePagesCache[index];
+  pane.innerHTML = `
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:14px; border-bottom:1px solid var(--border-color); padding-bottom:10px;">
+      <div>
+        <h3 style="margin:0 0 4px 0; color:#38bdf8;">${escapeHtml(pg.title)}</h3>
+        <span style="font-size:11px; color:#94a3b8;">Space: <strong>ATBDBT</strong> • Parent: Ask The Bee - Autonomous DBT Studio</span>
+      </div>
+      <a href="https://supplycopia.atlassian.net/wiki/spaces/ATBDBT" target="_blank" class="btn btn-secondary btn-sm" style="font-size:11px; text-decoration:none;">🔗 Open in Atlassian</a>
+    </div>
+    <div style="background:#050811; border:1px solid var(--border-color); border-radius:6px; padding:10px 14px; margin-bottom:16px;">
+      <div style="font-size:11px; color:#fbbf24; font-weight:600; margin-bottom:4px;">Atlassian Storage Format (XHTML) Preview:</div>
+      <div style="font-size:12px; color:#cbd5e1; line-height:1.6;">${pg.content_storage ? pg.content_storage.replace(/<[^>]+>/g, ' ').substring(0, 450) + '...' : 'Content generated for cloud upload.'}</div>
+    </div>
+    <div style="margin-top:16px;">
+      <h4 style="color:#f8fafc; font-size:13px; margin-bottom:8px;">Full Storage XHTML Blueprint:</h4>
+      <pre style="max-height:280px; overflow-y:auto;"><code>${escapeHtml(pg.content_storage || '')}</code></pre>
+    </div>
+  `;
+}
+
+async function syncConfluenceDocs() {
+  const btn = document.getElementById('btn-confluence-sync');
+  const banner = document.getElementById('confluence-sync-banner');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '⏳ Syncing Chapters...';
+  }
+  if (banner) {
+    banner.style.display = 'block';
+    banner.textContent = '🔄 Publishing 6 comprehensive technical documentation chapters to Confluence Cloud space ATBDBT...';
+  }
+
+  try {
+    const res = await fetch('/api/confluence/sync', { method: 'POST' });
+    const result = await res.json();
+    if (result.status === 'SUCCESS') {
+      showToast('Confluence Sync Succeeded', `Published ${result.pages_synced} technical chapters to space ATBDBT!`, 'success');
+      if (banner) {
+        banner.className = 'alert alert-success';
+        banner.innerHTML = `✅ Successfully synced ${result.pages_synced} chapters to Confluence! <a href="${escapeHtml(result.space_url || 'https://supplycopia.atlassian.net/wiki/spaces/ATBDBT')}" target="_blank" style="color:#38bdf8; text-decoration:underline; font-weight:600; margin-left:6px;">View Space in Confluence Cloud ↗</a>`;
+      }
+      loadConfluenceDocs();
+    } else {
+      showToast('Confluence Sync Partial/Failed', result.message || 'Error syncing docs', 'error');
+      if (banner) {
+        banner.className = 'alert alert-danger';
+        banner.textContent = `⚠️ Sync notice: ${result.message}`;
+      }
+    }
+  } catch (err) {
+    showToast('Sync Network Error', err.message, 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '🔄 Sync All Docs to Space';
+    }
+  }
+}
+
+// ----------------------------------------------------------------------------
+// 3. Jira Issues & Incident Tracker Controller (Project: ATBDBT)
+// ----------------------------------------------------------------------------
+function openJiraModal() {
+  closeUserProfileDropdown();
+  const modal = document.getElementById('modal-jira-tickets');
+  if (modal) {
+    modal.classList.add('open');
+    modal.style.display = 'flex';
+  }
+  loadJiraTickets();
+}
+
+function closeJiraModal() {
+  const modal = document.getElementById('modal-jira-tickets');
+  if (modal) {
+    modal.classList.remove('open');
+    modal.style.display = 'none';
+  }
+}
+
+function toggleJiraCreatePanel() {
+  const panel = document.getElementById('jira-create-panel');
+  if (!panel) return;
+  panel.style.display = (panel.style.display === 'none' || !panel.style.display) ? 'block' : 'none';
+}
+
+async function loadJiraTickets() {
+  const tbody = document.getElementById('jira-table-body');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #94a3b8; padding: 24px;">Fetching tickets from Jira Cloud (ATBDBT)...</td></tr>';
+
+  try {
+    const res = await fetch('/api/jira/issues?limit=25');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const issues = data.issues || [];
+
+    if (issues.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #94a3b8; padding: 24px;">No tickets found in Jira project ATBDBT. Click "Create Ticket" to open one.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = issues.map(iss => {
+      const p = (iss.priority || '').toLowerCase();
+      const pClass = (p === 'high' || p === 'highest') ? 'jira-priority-high' : (p === 'low' || p === 'lowest' ? 'jira-priority-low' : 'jira-priority-med');
+      const keyUrl = `https://supplycopia.atlassian.net/browse/${iss.key}`;
+      return `
+        <tr>
+          <td><a href="${keyUrl}" target="_blank" style="color: #38bdf8; font-weight: 600; text-decoration: none; font-family: var(--font-mono);">${escapeHtml(iss.key)} ↗</a></td>
+          <td><span class="jira-type-pill">🏷️ ${escapeHtml(iss.issue_type || 'Task')}</span></td>
+          <td style="font-weight: 500; color: #f1f5f9;">${escapeHtml(iss.summary || '')}</td>
+          <td><span class="jira-type-pill ${pClass}">${escapeHtml(iss.priority || 'Medium')}</span></td>
+          <td><span class="badge badge-info" style="font-size: 10.5px;">${escapeHtml(iss.status || 'To Do')}</span></td>
+          <td style="font-family: var(--font-mono); font-size: 11px; color: #94a3b8;">${escapeHtml((iss.created || '').substring(0, 10))}</td>
+        </tr>
+      `;
+    }).join('');
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #ef4444; padding: 24px;">Failed to load tickets: ${escapeHtml(err.message)}</td></tr>`;
+  }
+}
+
+async function submitCreateJiraTicket() {
+  const summaryEl = document.getElementById('jira-new-summary');
+  const typeEl = document.getElementById('jira-new-type');
+  const priorityEl = document.getElementById('jira-new-priority');
+  const descEl = document.getElementById('jira-new-description');
+  const btn = document.getElementById('btn-submit-jira-ticket');
+
+  const summary = summaryEl ? summaryEl.value.trim() : '';
+  const issue_type = typeEl ? typeEl.value : 'Task';
+  const priority = priorityEl ? priorityEl.value : 'Medium';
+  const description = descEl ? descEl.value.trim() : '';
+
+  if (!summary) {
+    alert('Please provide an issue summary/title.');
+    if (summaryEl) summaryEl.focus();
+    return;
+  }
+
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '⏳ Submitting...';
+  }
+
+  try {
+    const res = await fetch('/api/jira/create_issue', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ summary, issue_type, priority, description })
+    });
+    const result = await res.json();
+    if (result.status === 'SUCCESS') {
+      showToast('Jira Ticket Created', `Created ${result.key} in project ATBDBT!`, 'success');
+      if (summaryEl) summaryEl.value = '';
+      if (descEl) descEl.value = '';
+      toggleJiraCreatePanel();
+      loadJiraTickets();
+    } else {
+      showToast('Jira Error', result.message || 'Failed to create issue', 'error');
+    }
+  } catch (err) {
+    showToast('Network Error', err.message, 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '🚀 Submit Ticket';
+    }
+  }
+}
+
+
 

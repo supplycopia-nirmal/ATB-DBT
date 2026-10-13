@@ -26,6 +26,9 @@ from autonomous_dbt_app.core.institutional_knowledge import InstitutionalKnowled
 from autonomous_dbt_app.core.clinical_guardrails import ClinicalGuardrailsEngine, ClinicalUOMMatrix
 from autonomous_dbt_app.core.self_healing_engine import SelfHealingEngine
 from autonomous_dbt_app.core.client_file_tracker import ClientFileTracker, EntityMergeEngine, ENTITY_NATURAL_KEYS
+from autonomous_dbt_app.core.user_activity_logger import UserActivityLogger
+from autonomous_dbt_app.core.confluence_connector import ConfluenceConnector
+from autonomous_dbt_app.core.jira_connector import JiraConnector
 
 orchestrator = PipelineOrchestrator()
 state_mgr = StateManager()
@@ -41,6 +44,9 @@ self_healing_engine = SelfHealingEngine(
 )
 client_file_tracker = ClientFileTracker()
 entity_merge_engine = EntityMergeEngine(tracker=client_file_tracker)
+activity_logger = UserActivityLogger()
+confluence_connector = ConfluenceConnector()
+jira_connector = JiraConnector()
 
 import threading
 
@@ -273,6 +279,23 @@ class DashboardHandler(SimpleHTTPRequestHandler):
 </html>"""
         self.wfile.write(html.encode('utf-8'))
 
+    def _get_authenticated_user(self) -> str:
+        auth_header = self.headers.get('Authorization')
+        if auth_header and auth_header.startswith('Basic '):
+            try:
+                encoded_cred = auth_header.split(' ', 1)[1].strip()
+                decoded_cred = base64.b64decode(encoded_cred).decode('utf-8')
+                return decoded_cred.split(':', 1)[0]
+            except Exception:
+                pass
+        return "admin"
+
+    def _get_client_ip(self) -> str:
+        forwarded = self.headers.get('X-Forwarded-For')
+        if forwarded:
+            return forwarded.split(',')[0].strip()
+        return self.client_address[0] if self.client_address else "127.0.0.1"
+
     def do_HEAD(self):
         self.do_GET()
 
@@ -293,6 +316,21 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             return
 
         params = urllib.parse.parse_qs(parsed.query)
+
+        # Non-blocking activity logging for significant GET requests
+        if not is_unauthenticated and path not in ["/api/status", "/api/swarm_stream", "/api/compilation_progress", "/api/activity_logs", "/api/activity_logs/metrics"]:
+            try:
+                user_id = self._get_authenticated_user()
+                ip = self._get_client_ip()
+                activity_logger.log(
+                    user_id=user_id,
+                    action=f"GET {path}",
+                    details=f"Query: {parsed.query}" if parsed.query else f"Viewed {path}",
+                    status="SUCCESS",
+                    ip_address=ip
+                )
+            except Exception:
+                pass
 
         if path == "/api/status":
             self._send_json(state_mgr.load())
@@ -372,6 +410,37 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         elif path == "/api/compilation_progress":
             with compilation_lock:
                 self._send_json(compilation_state)
+        elif path == "/api/activity_logs":
+            user_filter = params.get("user_id", [None])[0]
+            action_filter = params.get("action", [None])[0]
+            status_filter = params.get("status", [None])[0]
+            q_filter = params.get("q", [None])[0]
+            limit = int(params.get("limit", [50])[0])
+            offset = int(params.get("offset", [0])[0])
+            self._send_json(activity_logger.query_logs(
+                user_id=user_filter, action=action_filter, status=status_filter,
+                search_query=q_filter, limit=limit, offset=offset
+            ))
+        elif path == "/api/activity_logs/metrics":
+            self._send_json(activity_logger.get_activity_metrics())
+        elif path == "/api/activity_logs/export":
+            csv_bytes = activity_logger.export_csv_bytes()
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/csv; charset=utf-8')
+            self.send_header('Content-Disposition', f'attachment; filename="supplycopia_activity_logs_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv"')
+            self.send_header('Content-Length', str(len(csv_bytes)))
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(csv_bytes)
+        elif path == "/api/confluence/pages":
+            self._send_json(confluence_connector.get_cached_docs())
+        elif path == "/api/confluence/status":
+            self._send_json(confluence_connector.test_connection())
+        elif path == "/api/jira/issues":
+            limit = int(params.get("limit", [20])[0])
+            self._send_json(jira_connector.list_issues(limit=limit))
+        elif path == "/api/jira/status":
+            self._send_json(jira_connector.test_connection())
         elif path.startswith('/dbt-docs'):
             self._handle_dbt_docs(path)
         else:
@@ -387,6 +456,20 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         content_len = int(self.headers.get('Content-Length', 0))
         body = self.rfile.read(content_len).decode('utf-8')
         payload = json.loads(body) if body else {}
+
+        # Non-blocking activity logging for POST actions
+        try:
+            user_id = self._get_authenticated_user()
+            ip = self._get_client_ip()
+            activity_logger.log(
+                user_id=user_id,
+                action=f"POST {path}",
+                details=f"Endpoint {path} triggered",
+                status="SUCCESS",
+                ip_address=ip
+            )
+        except Exception:
+            pass
 
         if path == "/api/s3_ingest":
             self._handle_s3_ingest(payload)
@@ -549,6 +632,26 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             self._handle_client_tracker_register(payload)
         elif path == "/api/client_tracker/merge":
             self._handle_client_tracker_merge(payload)
+        elif path == "/api/activity_logs/purge":
+            days = int(payload.get("days", 90))
+            if days > 90:
+                days = 90  # Strict policy: max retention 90 days
+            res = activity_logger.purge_older_than(days=days)
+            self._send_json(res)
+        elif path == "/api/confluence/sync":
+            res = confluence_connector.sync_all_docs_to_confluence()
+            self._send_json(res)
+        elif path == "/api/jira/create_issue":
+            summary = payload.get("summary", "").strip()
+            description = payload.get("description", "").strip()
+            issue_type = payload.get("issue_type", "Task")
+            priority = payload.get("priority", "Medium")
+            labels = payload.get("labels", ["studio-portal"])
+            if not summary:
+                self._send_json({"status": "ERROR", "message": "Summary is required"}, status=400)
+                return
+            res = jira_connector.create_issue(summary, description, issue_type=issue_type, priority=priority, labels=labels)
+            self._send_json(res)
         else:
             self._send_json({"error": "Endpoint not found"}, status=404)
 

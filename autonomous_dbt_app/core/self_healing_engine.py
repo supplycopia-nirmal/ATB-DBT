@@ -8,6 +8,7 @@ from autonomous_dbt_app.config import OUTPUT_DIR, ROOT_DIR as PROJECT_ROOT
 from autonomous_dbt_app.core.state_manager import StateManager
 from autonomous_dbt_app.core.cortex_client import CortexClient
 from autonomous_dbt_app.core.institutional_knowledge import InstitutionalKnowledgeEngine
+from autonomous_dbt_app.core.jira_connector import JiraConnector
 
 class SelfHealingEngine:
     """
@@ -21,6 +22,7 @@ class SelfHealingEngine:
         self.state_mgr = state_mgr or StateManager()
         self.knowledge = knowledge_engine or InstitutionalKnowledgeEngine()
         self.cortex = CortexClient()
+        self.jira = JiraConnector()
 
     def diagnose_and_plan(self, error_text: str, context: str = "Pipeline Execution", user_feedback: str = "") -> Dict[str, Any]:
         """
@@ -211,9 +213,8 @@ Be concise, professional, and formatted in clear Markdown bullet points."""
             }
 
         con = duckdb.connect(str(self.duckdb_path))
-        con.execute("PRAGMA threads=4;")
-
         try:
+            con.execute("PRAGMA threads=4;")
             # Resolution Case 1: TEST_GAP_008 (Procedure Hierarchy Cardinality)
             if "test_gap_008" in err_lower or "cardinality" in err_lower or "standard procedures" in err_lower:
                 # 0. Ensure prerequisite tables exist defensively
@@ -570,7 +571,26 @@ select * from aggregated;
                 con.close()
             except Exception:
                 pass
+
+            # Automated Incident Escalation into Jira Project ATBDBT
+            jira_res = self.jira.create_incident_ticket(
+                error_message=str(e),
+                context="Auto-Resolve Patch Execution",
+                details={"target_error": error_text, "plan": plan_text, "feedback": user_feedback}
+            )
+
+            if jira_res.get("status") == "SUCCESS":
+                self.state_mgr.log_swarm_event(
+                    "Inspector Bee Guard", "Jira Escalation", "Incident Ticket Created",
+                    f"Escalated unresolvable exception to Jira: {jira_res.get('issue_key')} ({jira_res.get('url')})",
+                    "🎫"
+                )
+
+            escalation_msg = f" (Escalated to Jira ticket {jira_res.get('issue_key')})" if jira_res.get("status") == "SUCCESS" else ""
             return {
                 "status": "ERROR",
-                "message": f"Execution of auto-resolve patch encountered an error: {str(e)}"
+                "message": f"Execution of auto-resolve patch encountered an error: {str(e)}{escalation_msg}",
+                "jira_incident": jira_res.get("issue_key"),
+                "jira_ticket": jira_res.get("issue_key"),
+                "jira_url": jira_res.get("url")
             }

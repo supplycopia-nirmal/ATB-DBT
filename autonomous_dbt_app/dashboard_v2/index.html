@@ -92,11 +92,50 @@
             </div>
           </div>
 
-          <!-- Authenticated User Profile Pill -->
-          <div class="user-profile-badge" title="Authenticated User Session">
-            <span class="user-avatar">👤</span>
-            <span class="user-name">admin</span>
-            <span class="auth-pill">SSO-Ready</span>
+          <!-- Authenticated User Profile Pill with Dropdown -->
+          <div class="user-profile-wrapper" id="user-profile-wrapper">
+            <div class="user-profile-badge" id="user-profile-badge" onclick="toggleUserProfileDropdown(event)" title="Account & Enterprise Tools">
+              <span class="user-avatar">👤</span>
+              <span class="user-name">admin</span>
+              <span class="auth-pill">SSO-Ready</span>
+              <span class="user-dropdown-caret">▼</span>
+            </div>
+            <div class="user-profile-dropdown" id="user-profile-dropdown">
+              <div class="user-profile-dropdown-header">
+                <div class="user-title">👤 Nirmal Rayan (admin)</div>
+                <div class="user-subtitle">nrayan@supplycopia.com • SupplyCopia Inc.</div>
+              </div>
+              <div class="user-profile-dropdown-list">
+                <div class="user-profile-dropdown-item" onclick="openActivityLogsModal()">
+                  <span class="item-icon">📜</span>
+                  <div class="item-text">
+                    <strong>User Activity &amp; Audit Logs</strong>
+                    <div style="font-size: 11px; color: #94a3b8;">Lightweight audit trails (90d max)</div>
+                  </div>
+                  <span class="item-badge">90d</span>
+                </div>
+                <div class="user-profile-dropdown-item" onclick="openConfluenceModal()">
+                  <span class="item-icon">📘</span>
+                  <div class="item-text">
+                    <strong>Technical Documentation</strong>
+                    <div style="font-size: 11px; color: #94a3b8;">Confluence Space: ATBDBT</div>
+                  </div>
+                  <span class="item-badge">Sync</span>
+                </div>
+                <div class="user-profile-dropdown-item" onclick="openJiraModal()">
+                  <span class="item-icon">🎫</span>
+                  <div class="item-text">
+                    <strong>Jira Incident &amp; Issue Tracker</strong>
+                    <div style="font-size: 11px; color: #94a3b8;">Project: ATBDBT • Self-Healing</div>
+                  </div>
+                  <span class="item-badge">Cloud</span>
+                </div>
+              </div>
+              <div class="user-profile-dropdown-footer">
+                <span>Enterprise Suite v4.2</span>
+                <span style="color: #34d399;">● Connected</span>
+              </div>
+            </div>
           </div>
         </div>
       </header>
@@ -1247,6 +1286,250 @@
     <div class="bee-accordion-body">
       <div id="swarm-events-stream" class="accordion-stream-box">
         <div class="loading">Listening for Bee Swarms...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       Enterprise Suite Modals: Activity Logs, Confluence Docs, and Jira Tracker
+       ========================================================================= -->
+
+  <!-- Modal: User Activity & Audit Logs -->
+  <div id="modal-activity-logs" class="modal">
+    <div class="modal-dialog modal-xxl">
+      <div class="modal-header">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="font-size: 20px;">📜</span>
+          <div>
+            <h3 style="margin: 0; font-size: 16px;">User Activity &amp; Audit Logs</h3>
+            <span style="font-size: 11px; color: #94a3b8;">High-throughput, asynchronous audit trails with 90-day auto-purge policy</span>
+          </div>
+        </div>
+        <span class="modal-close" onclick="closeActivityLogsModal()">&times;</span>
+      </div>
+      <div class="modal-body modal-body-scrollable">
+        <!-- Metric Chips -->
+        <div class="metric-chips-row">
+          <div class="metric-chip">
+            <span class="metric-chip-icon">📊</span>
+            <div>
+              <div class="metric-chip-val" id="act-metric-total">--</div>
+              <div class="metric-chip-lbl">Total Audit Logs</div>
+            </div>
+          </div>
+          <div class="metric-chip">
+            <span class="metric-chip-icon">⚡</span>
+            <div>
+              <div class="metric-chip-val" id="act-metric-today">--</div>
+              <div class="metric-chip-lbl">Today's Events</div>
+            </div>
+          </div>
+          <div class="metric-chip">
+            <span class="metric-chip-icon">👥</span>
+            <div>
+              <div class="metric-chip-val" id="act-metric-users">--</div>
+              <div class="metric-chip-lbl">Active Users</div>
+            </div>
+          </div>
+          <div class="metric-chip">
+            <span class="metric-chip-icon">💾</span>
+            <div>
+              <div class="metric-chip-val" id="act-metric-size">--</div>
+              <div class="metric-chip-lbl">Storage (WAL SQLite)</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Filter & Control Toolbar -->
+        <div class="filter-toolbar">
+          <div class="filter-toolbar-left">
+            <input type="text" id="act-filter-search" class="filter-input" placeholder="Search user, action, details..." oninput="handleActivitySearchDebounced()" style="flex: 1;">
+            <select id="act-filter-action" class="filter-input" onchange="loadActivityLogs(true)">
+              <option value="">All Actions</option>
+              <option value="POST">POST Operations</option>
+              <option value="GET">GET Operations</option>
+              <option value="Pipeline">Pipeline Executions</option>
+              <option value="Refinement">Refinement Plans</option>
+              <option value="Tracker">File Tracking</option>
+              <option value="Jira">Jira Escalation</option>
+            </select>
+            <select id="act-filter-status" class="filter-input" onchange="loadActivityLogs(true)">
+              <option value="">All Statuses</option>
+              <option value="SUCCESS">SUCCESS</option>
+              <option value="ERROR">ERROR</option>
+              <option value="WARNING">WARNING</option>
+            </select>
+          </div>
+          <div class="filter-toolbar-right">
+            <span class="badge-retention-notice">⏳ Strict Retention: Max 90 Days</span>
+            <button class="btn btn-secondary btn-sm" onclick="exportActivityLogsCsv()" title="Export CSV audit trail">📥 Export CSV</button>
+            <button class="btn btn-danger btn-sm" onclick="purgeActivityLogsPrompt()" title="Trigger manual database purge up to 90 days">🗑️ Purge (&gt;90d)</button>
+            <button class="btn btn-primary btn-sm" onclick="loadActivityLogs(true)" title="Refresh audit log stream">🔄 Refresh</button>
+          </div>
+        </div>
+
+        <!-- Audit Table -->
+        <div class="audit-table-wrap">
+          <table class="audit-table">
+            <thead>
+              <tr>
+                <th style="width: 140px;">Timestamp (UTC)</th>
+                <th style="width: 100px;">User</th>
+                <th style="width: 100px;">Client IP</th>
+                <th style="width: 170px;">Action / Route</th>
+                <th style="width: 90px;">Status</th>
+                <th>Context / Payload Details</th>
+              </tr>
+            </thead>
+            <tbody id="activity-table-body">
+              <tr><td colspan="6" style="text-align: center; color: #94a3b8; padding: 24px;">Loading activity audit logs...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
+        <span style="font-size: 11px; color: #94a3b8;" id="act-pagination-info">Showing logs...</span>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn btn-secondary btn-sm" onclick="loadPreviousActivityPage()" id="btn-act-prev" disabled>◀ Previous</button>
+          <button class="btn btn-secondary btn-sm" onclick="loadNextActivityPage()" id="btn-act-next">Next ▶</button>
+          <button class="btn btn-secondary btn-sm" onclick="closeActivityLogsModal()">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Confluence Technical Documentation -->
+  <div id="modal-confluence-docs" class="modal">
+    <div class="modal-dialog modal-xxl">
+      <div class="modal-header">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="font-size: 20px;">📘</span>
+          <div>
+            <h3 style="margin: 0; font-size: 16px;">Technical Documentation (Confluence)</h3>
+            <span style="font-size: 11px; color: #94a3b8;">Space: <strong>ATBDBT</strong> • Ask The Bee - DBT Automation</span>
+          </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <a href="https://supplycopia.atlassian.net/wiki/spaces/ATBDBT" target="_blank" class="btn btn-secondary btn-sm" style="text-decoration: none;">🌐 Open Confluence</a>
+          <button class="btn btn-primary btn-sm" onclick="syncConfluenceDocs()" id="btn-confluence-sync">🔄 Sync All Docs to Space</button>
+          <span class="modal-close" onclick="closeConfluenceModal()">&times;</span>
+        </div>
+      </div>
+      <div class="modal-body modal-body-scrollable">
+        <div id="confluence-sync-banner" style="display: none; margin-bottom: 14px;" class="alert alert-info"></div>
+        <div class="confluence-layout">
+          <!-- Left Nav: Chapters -->
+          <div class="confluence-nav" id="confluence-nav-list">
+            <div class="loading">Loading technical chapters...</div>
+          </div>
+          <!-- Right Pane: Chapter Preview & Specs -->
+          <div class="confluence-content-pane" id="confluence-content-pane">
+            <div style="text-align: center; padding: 40px; color: #94a3b8;">
+              <span style="font-size: 32px;">📘</span>
+              <p>Select a chapter on the left to preview the technical documentation and Atlassian storage specs.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer" style="justify-content: space-between;">
+        <span style="font-size: 11px; color: #94a3b8;">Target Atlassian Host: <code>https://supplycopia.atlassian.net/wiki</code></span>
+        <button class="btn btn-secondary btn-sm" onclick="closeConfluenceModal()">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Jira Issue & Incident Tracker -->
+  <div id="modal-jira-tickets" class="modal">
+    <div class="modal-dialog modal-xxl">
+      <div class="modal-header">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="font-size: 20px;">🎫</span>
+          <div>
+            <h3 style="margin: 0; font-size: 16px;">Jira Issue &amp; Incident Tracker</h3>
+            <span style="font-size: 11px; color: #94a3b8;">Project: <strong>ATBDBT</strong> • Self-Healing Exception Escalation &amp; Operational Tasks</span>
+          </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <a href="https://supplycopia.atlassian.net/jira/your-work" target="_blank" class="btn btn-secondary btn-sm" style="text-decoration: none;">🌐 Open Jira</a>
+          <button class="btn btn-primary btn-sm" onclick="toggleJiraCreatePanel()">➕ Create Ticket</button>
+          <span class="modal-close" onclick="closeJiraModal()">&times;</span>
+        </div>
+      </div>
+      <div class="modal-body modal-body-scrollable">
+        <!-- Jira Status Banner -->
+        <div class="jira-status-banner">
+          <div>
+            <strong>🔗 Cloud Integration Status:</strong>
+            <span style="color: #34d399; margin-left: 6px;">● Connected to supplycopia.atlassian.net</span>
+            <span style="color: #94a3b8; font-size: 11px; margin-left: 8px;">(Operator: nrayan@supplycopia.com)</span>
+          </div>
+          <div style="font-size: 11px; color: #cbd5e1;">
+            Auto-Escalation: <span class="badge badge-success" style="font-size: 10px;">Active</span>
+          </div>
+        </div>
+
+        <!-- Collapsible Create Ticket Panel -->
+        <div id="jira-create-panel" class="jira-create-panel" style="display: none;">
+          <h4><span>➕</span> Create New Jira Ticket (ATBDBT)</h4>
+          <div class="jira-grid-fields">
+            <div>
+              <label style="font-size: 11px; color: #94a3b8; display: block; margin-bottom: 4px;">Summary / Issue Title *</label>
+              <input type="text" id="jira-new-summary" class="filter-input" style="width: 100%; box-sizing: border-box;" placeholder="e.g. Contract UOM mismatch for surgical supplies">
+            </div>
+            <div>
+              <label style="font-size: 11px; color: #94a3b8; display: block; margin-bottom: 4px;">Issue Type</label>
+              <select id="jira-new-type" class="filter-input" style="width: 100%;">
+                <option value="Task" selected>Task</option>
+                <option value="Bug">Bug</option>
+                <option value="Story">Story</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size: 11px; color: #94a3b8; display: block; margin-bottom: 4px;">Priority</label>
+              <select id="jira-new-priority" class="filter-input" style="width: 100%;">
+                <option value="High">High</option>
+                <option value="Medium" selected>Medium</option>
+                <option value="Low">Low</option>
+                <option value="Highest">Highest</option>
+              </select>
+            </div>
+          </div>
+          <div style="margin-bottom: 12px;">
+            <label style="font-size: 11px; color: #94a3b8; display: block; margin-bottom: 4px;">Description / Context</label>
+            <textarea id="jira-new-description" class="filter-input" rows="3" style="width: 100%; box-sizing: border-box;" placeholder="Provide details, error traces, or expected outcomes..."></textarea>
+          </div>
+          <div style="display: flex; justify-content: flex-end; gap: 8px;">
+            <button class="btn btn-secondary btn-sm" onclick="toggleJiraCreatePanel()">Cancel</button>
+            <button class="btn btn-primary btn-sm" onclick="submitCreateJiraTicket()" id="btn-submit-jira-ticket">🚀 Submit Ticket</button>
+          </div>
+        </div>
+
+        <!-- Issue List / Table -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+          <h4 style="margin: 0; font-size: 13px; color: #f8fafc;">📋 Active Tickets &amp; Self-Healing Incidents</h4>
+          <button class="btn btn-secondary btn-sm" onclick="loadJiraTickets()">🔄 Refresh List</button>
+        </div>
+        <div class="audit-table-wrap">
+          <table class="audit-table">
+            <thead>
+              <tr>
+                <th style="width: 120px;">Ticket Key</th>
+                <th style="width: 90px;">Type</th>
+                <th>Summary</th>
+                <th style="width: 100px;">Priority</th>
+                <th style="width: 110px;">Status</th>
+                <th style="width: 140px;">Created</th>
+              </tr>
+            </thead>
+            <tbody id="jira-table-body">
+              <tr><td colspan="6" style="text-align: center; color: #94a3b8; padding: 24px;">Loading Jira tickets...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer" style="justify-content: space-between;">
+        <span style="font-size: 11px; color: #94a3b8;">Unresolved self-healing failures automatically create high-priority bug tickets here.</span>
+        <button class="btn btn-secondary btn-sm" onclick="closeJiraModal()">Close</button>
       </div>
     </div>
   </div>
