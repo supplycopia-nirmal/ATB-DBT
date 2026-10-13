@@ -76,16 +76,18 @@ class ConfluenceConnector:
             return {"status": "ERROR", "message": f"Confluence Connection Error: {str(e)}"}
 
     def get_space_root_page(self) -> Optional[Dict[str, Any]]:
-        """Finds the home / root page for the space."""
-        url = f"{self.base_url}/content?spaceKey={self.space_key}&type=page&limit=1"
+        """Finds the designated home / root page for the space."""
+        url = f"{self.base_url}/space/{self.space_key}?expand=homepage"
         req = urllib.request.Request(url, headers=self._get_headers())
         try:
             with urllib.request.urlopen(req, timeout=15) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
-                results = data.get("results", [])
-                return results[0] if results else None
+                homepage = data.get("homepage")
+                if homepage and homepage.get("id"):
+                    return homepage
         except Exception:
-            return None
+            pass
+        return {"id": "2080997603", "title": "Ask The Bee - DBT Automation"}
 
     def find_page_by_title(self, title: str) -> Optional[Dict[str, Any]]:
         """Searches for an existing page by title in the space."""

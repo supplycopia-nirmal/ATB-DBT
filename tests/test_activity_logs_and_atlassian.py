@@ -169,14 +169,16 @@ class TestConfluenceSpaceBuilder(unittest.TestCase):
     def test_manifest_and_section_blueprints(self):
         from autonomous_dbt_app.core.confluence_space_builder import ConfluenceSpaceBuilder, space_builder
         builder = space_builder
-        # Check master hub and sections generate valid storage xhtml
+        # Check master hub and sections generate valid storage xhtml with process flows
         hub_content = builder.get_master_hub_content("2026-10-13 12:00:00 UTC")
-        self.assertIn("Master Documentation Index", hub_content)
-        self.assertIn("Executive Summary", hub_content)
+        self.assertIn("Master Index", hub_content)
+        self.assertIn("Executive Platform Overview", hub_content)
+        self.assertIn("PROCESS FLOW DIAGRAM", hub_content)
 
         sec1 = builder.get_section_1_content()
         self.assertIn("Queen Bee Orla", sec1)
         self.assertIn("Sentinel Aegis", sec1)
+        self.assertIn("PROCESS FLOW DIAGRAM", sec1)
 
         sec8 = builder.get_section_8_content()
         self.assertIn("243,934,093.08", sec8)
