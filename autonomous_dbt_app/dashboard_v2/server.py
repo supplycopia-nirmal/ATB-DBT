@@ -21,11 +21,17 @@ from autonomous_dbt_app.orchestrator.pipeline_orchestrator import PipelineOrches
 from autonomous_dbt_app.core.s3_connector import S3Connector
 from autonomous_dbt_app.orchestrator.checkpoint_manager import CheckpointManager
 from autonomous_dbt_app.agents.enterprise_agent import EnterpriseAgent
+from autonomous_dbt_app.agents.refinement_agent import RefinementAgent
+from autonomous_dbt_app.core.institutional_knowledge import InstitutionalKnowledgeEngine
+from autonomous_dbt_app.core.clinical_guardrails import ClinicalGuardrailsEngine, ClinicalUOMMatrix
 
 orchestrator = PipelineOrchestrator()
 state_mgr = StateManager()
 checkpoint_mgr = CheckpointManager()
 enterprise_agent = EnterpriseAgent()
+knowledge_engine = InstitutionalKnowledgeEngine()
+refinement_agent = RefinementAgent(knowledge_engine=knowledge_engine)
+guardrails_engine = ClinicalGuardrailsEngine()
 
 class DashboardHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
@@ -134,6 +140,20 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         elif path == "/api/kpi_export_excel":
             kpi_type = params.get("kpi", ["spend"])[0]
             self._handle_kpi_export_excel(kpi_type)
+        elif path == "/api/refinement/history":
+            self._send_json({"status": "SUCCESS", "plans": refinement_agent.get_all_plans()})
+        elif path == "/api/knowledge/playbook":
+            self._send_json({
+                "status": "SUCCESS", 
+                "learnings": knowledge_engine.get_all_learnings(),
+                "markdown": knowledge_engine.export_playbook_markdown()
+            })
+        elif path == "/api/guardrails/rules":
+            self._send_json({
+                "status": "SUCCESS",
+                "uom_factors": ClinicalUOMMatrix.KNOWN_UOM_FACTORS,
+                "common_multiples": ClinicalUOMMatrix.COMMON_MULTIPLES
+            })
         elif path.startswith('/dbt-docs'):
             self._handle_dbt_docs(path)
         else:
@@ -318,8 +338,77 @@ Be concise, professional, and formatted in clear Markdown bullet points."""
             self._handle_chat_feedback(payload)
         elif path == "/api/cortex/run_standardization":
             self._handle_cortex_run_standardization(payload)
+        elif path == "/api/refinement/submit":
+            self._handle_refinement_submit(payload)
+        elif path == "/api/refinement/reiterate":
+            self._handle_refinement_reiterate(payload)
+        elif path == "/api/refinement/execute":
+            self._handle_refinement_execute(payload)
         else:
             self._send_json({"error": "Endpoint not found"}, status=404)
+
+    def _handle_refinement_submit(self, payload: Dict[str, Any]):
+        feedback_text = payload.get("feedback_text", "").strip()
+        if not feedback_text:
+            self._send_json({"status": "ERROR", "message": "Feedback text is required"}, status=400)
+            return
+
+        evidence_files = payload.get("evidence_files", [])
+        code_snippet = payload.get("code_snippet", "")
+        client_id = payload.get("client_id", "CL_UCH_001")
+        client_name = payload.get("client_name", "UC Health")
+
+        try:
+            plan = refinement_agent.generate_implementation_plan(
+                feedback_text=feedback_text,
+                evidence_files=evidence_files,
+                code_snippet=code_snippet,
+                client_id=client_id,
+                client_name=client_name
+            )
+            state_mgr.log_swarm_event(
+                "Architect Bee Pollen", "Refinement Engine", "Implementation Plan Synthesized",
+                f"Generated {plan['plan_id']} (Revision {plan['revision']}) for {plan['title']}",
+                "📐"
+            )
+            self._send_json({"status": "SUCCESS", "plan": plan})
+        except Exception as e:
+            self._send_json({"status": "ERROR", "message": str(e)}, status=500)
+
+    def _handle_refinement_reiterate(self, payload: Dict[str, Any]):
+        plan_id = payload.get("plan_id")
+        comment = payload.get("operator_comment", "").strip()
+        if not plan_id or not comment:
+            self._send_json({"status": "ERROR", "message": "plan_id and operator_comment are required"}, status=400)
+            return
+
+        try:
+            plan = refinement_agent.reiterate_plan(plan_id, comment)
+            state_mgr.log_swarm_event(
+                "Architect Bee Pollen", "Refinement Engine", "Implementation Plan Revised",
+                f"Updated {plan_id} to Revision {plan['revision']}: {comment[:60]}...",
+                "🔄"
+            )
+            self._send_json({"status": "SUCCESS", "plan": plan})
+        except Exception as e:
+            self._send_json({"status": "ERROR", "message": str(e)}, status=500)
+
+    def _handle_refinement_execute(self, payload: Dict[str, Any]):
+        plan_id = payload.get("plan_id")
+        if not plan_id:
+            self._send_json({"status": "ERROR", "message": "plan_id is required"}, status=400)
+            return
+
+        try:
+            result = refinement_agent.execute_plan(plan_id)
+            state_mgr.log_swarm_event(
+                "Worker Bee Wax", "Autonomous DBT Pipeline", "Refinement Plan Executed & Certified",
+                f"Executed {plan_id}. Recorded learning {result.get('learning_id')} in Institutional Playbook.",
+                "⚡"
+            )
+            self._send_json(result)
+        except Exception as e:
+            self._send_json({"status": "ERROR", "message": str(e)}, status=500)
 
     def _handle_s3_ingest(self, payload: Dict[str, Any]):
         s3_uri = payload.get("s3_uri", "s3://supplycopia-client-data/uc-health/raw/")

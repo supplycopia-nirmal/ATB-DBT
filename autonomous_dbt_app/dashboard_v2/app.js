@@ -46,13 +46,14 @@ function switchStage(stageId) {
   if (stageId === 'joins') loadJoins();
   if (stageId === 'explorer') loadOutputTableData();
   if (stageId === 'parity') loadParityDetails();
+  if (stageId === 'refine') loadRefinementStage();
 
   // Auto-save checkpoint at stage transitions
   autoSaveCheckpoint(getStageNumber(stageId), stageId.toUpperCase());
 }
 
 function getStageNumber(stageId) {
-  const map = { 'ingest': 1, 'profile': 2, 'joins': 3, 'lineage': 4, 'explorer': 5, 'parity': 6 };
+  const map = { 'ingest': 1, 'profile': 2, 'joins': 3, 'lineage': 4, 'explorer': 5, 'parity': 6, 'refine': 7 };
   return map[stageId] || 1;
 }
 
@@ -2432,3 +2433,453 @@ async function confirmIncrementalMutationAction() {
     showToast("Network Error", err.message, "error");
   }
 }
+
+// ==============================================================================
+// STAGE 7: CLINICAL & ANALYTICS RETROSPECTIVE REFINEMENT & SELF-EVOLUTION
+// ==============================================================================
+let attachedRefineFiles = [];
+let activeRefinePlan = null;
+let playbookLearningsCache = [];
+
+function switchRefineSubTab(tabName) {
+  document.querySelectorAll('#stage-refine .tab-pill').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.refine-pane').forEach(p => p.style.display = 'none');
+
+  const btn = document.getElementById(`tab-refine-${tabName}`);
+  if (btn) btn.classList.add('active');
+
+  const pane = document.getElementById(`refine-pane-${tabName}`);
+  if (pane) pane.style.display = 'block';
+
+  if (tabName === 'playbook') loadPlaybookLearnings();
+  if (tabName === 'guardrails') loadGuardrails();
+}
+
+function loadRefinementStage() {
+  loadPlaybookLearnings();
+  loadGuardrails();
+  loadRecentRefinementPlans();
+}
+
+function openNewFindingForm() {
+  switchRefineSubTab('submit');
+  document.getElementById('refine-feedback-input')?.focus();
+}
+
+function openRefineWithTableContext() {
+  const currentTable = document.getElementById('select-output-table')?.value || 'fct_consumption_cost_savings_v4';
+  switchStage('refine');
+  switchRefineSubTab('submit');
+  const input = document.getElementById('refine-feedback-input');
+  if (input) {
+    input.value = `[Review on mart: ${currentTable}]\nClinical/Analytics discrepancy identified:\n- Specific item/vendor affected:\n- Observed value vs expected contract value:\n- Rationale: `;
+    input.focus();
+  }
+}
+
+function applyRefineTemplate(type) {
+  const feedbackInput = document.getElementById('refine-feedback-input');
+  const codeInput = document.getElementById('refine-code-input');
+
+  if (type === 'uom') {
+    feedbackInput.value = "Clinical team audit for DRG 183: Item 536188 (VALVE MTRL MITRACLIP G4) was billed at unit price $30,000. Review of packaging slip confirms this item is purchased in Box of 2 (BX/2). The true Each price is $15,000, which matches the contract baseline. Please adjust the packaging multiplier so this does not trigger a false price variance spike.";
+    codeInput.value = "def sanitize_mitraclip_uom(row):\n    if row.get('item_number') == '536188' and row.get('uom') in ('BX', 'BX/2'):\n        return row['supply_unit_price'] / 2.0\n    return row['supply_unit_price']";
+  } else if (type === 'vendor') {
+    feedbackInput.value = "Vendor naming fragmentation: Vendor 'ST JUDE MEDICAL SC INC' appears in purchase orders under aliases 'ST. JUDE', 'ST JUDE MEDICAL', and 'SJM SC'. These 4 variations should be consolidated to canonical supplier 'ST JUDE MEDICAL SC INC' to aggregate spend under single volume tier.";
+    codeInput.value = "-- Consolidate St. Jude vendor aliases in staging contracts\nTRIM(REGEXP_REPLACE(supplier_name, '(?i)(,?\\s*INC|LLC|CORP|SC)', '')) as supplier_name_normalized";
+  } else if (type === 'procedure') {
+    feedbackInput.value = "Procedure group classification refinement: Item 550976 (DEVICE VNTRC AST IMPELLA 5.5 SMARTASSIST CATH) in Facility 'UH OR' is currently mapped under General Surgery. Clinical engineering confirms this should be classified under 'Cardiac Surgery - Mechanical Circulatory Support'.";
+    codeInput.value = "CASE \n  WHEN item_number = '550976' THEN 'Cardiac Surgery - Mechanical Circulatory Support'\n  ELSE primary_procedure_group \nEND as primary_procedure_group";
+  } else if (type === 'typo') {
+    feedbackInput.value = "Decimal shift data-entry typo: Case ID 1611931 had line unit price entered as $450,000.00 instead of $45,000.00 (10x typo). Please apply statistical IQR outlier bound to flag and isolate 10x spikes into clinical exceptions quarantine.";
+    codeInput.value = "def quarantine_10x_spikes(unit_price, benchmark_price):\n    if benchmark_price > 0 and (unit_price / benchmark_price) between 8.5 and 11.5:\n        return True, '10X_DECIMAL_TYPO'\n    return False, 'VALID'";
+  }
+}
+
+function handleRefineFilesSelected(event) {
+  const files = event.target.files;
+  if (!files || files.length === 0) return;
+
+  for (let i = 0; i < files.length; i++) {
+    attachedRefineFiles.push({
+      name: files[i].name,
+      size: (files[i].size / 1024).toFixed(1) + ' KB',
+      type: files[i].type || 'evidence'
+    });
+  }
+
+  renderAttachedFilesList();
+}
+
+function renderAttachedFilesList() {
+  const list = document.getElementById('refine-attached-files-list');
+  if (!list) return;
+
+  list.innerHTML = attachedRefineFiles.map((f, idx) => `
+    <div class="attached-file-pill">
+      <span>📄 <strong>${f.name}</strong> (${f.size})</span>
+      <span class="attached-file-remove" onclick="removeAttachedRefineFile(${idx})" title="Remove attachment">&times;</span>
+    </div>
+  `).join('');
+}
+
+function removeAttachedRefineFile(idx) {
+  attachedRefineFiles.splice(idx, 1);
+  renderAttachedFilesList();
+}
+
+function clearRefinementForm() {
+  document.getElementById('refine-feedback-input').value = '';
+  document.getElementById('refine-code-input').value = '';
+  attachedRefineFiles = [];
+  renderAttachedFilesList();
+}
+
+async function submitClinicalFeedback() {
+  const text = document.getElementById('refine-feedback-input')?.value.trim();
+  const code = document.getElementById('refine-code-input')?.value.trim();
+
+  if (!text) {
+    showToast("Feedback Required", "Please provide a clinical finding or issue description.", "warning");
+    return;
+  }
+
+  showToast("Synthesizing Plan", "Architect Bee inspecting models and synthesizing implementation plan...", "info");
+
+  try {
+    const payload = {
+      feedback_text: text,
+      code_snippet: code,
+      evidence_files: attachedRefineFiles.map(f => f.name),
+      client_name: "UC Health",
+      client_id: "CL_UCH_001"
+    };
+
+    const res = await fetch('/api/refinement/submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+
+    if (!res.ok || data.status !== 'SUCCESS') {
+      showToast("Synthesis Error", data.message || "Failed to generate plan", "error");
+      return;
+    }
+
+    activeRefinePlan = data.plan;
+    renderImplementationPlan(activeRefinePlan);
+    switchRefineSubTab('plan');
+    showToast("Implementation Plan Ready", `Plan ${activeRefinePlan.plan_id} (Rev 1) synthesized for review.`, "success");
+    addNotification("Refinement Plan Generated", `Synthesized plan for: ${activeRefinePlan.title}`);
+
+    const badge = document.getElementById('refine-plan-badge');
+    if (badge) {
+      badge.style.display = 'inline-block';
+      badge.textContent = `Draft Rev ${activeRefinePlan.revision}`;
+    }
+
+  } catch (err) {
+    showToast("Submission Error", err.message, "error");
+  }
+}
+
+function renderImplementationPlan(plan) {
+  const container = document.getElementById('refine-plan-container');
+  if (!container || !plan) return;
+
+  const diffsHtml = (plan.proposed_diffs || []).map(d => `
+    <div style="margin-bottom: 14px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; font-size:12px; margin-bottom:4px;">
+        <span style="color:#38bdf8; font-weight:700;">📄 ${d.file} <span class="badge badge-primary" style="font-size:9px; padding:1px 5px;">${d.layer}</span></span>
+        <span style="color:var(--text-muted); font-size:11px;">${d.description}</span>
+      </div>
+      <div class="diff-viewer-box">${escapeHtml(d.diff_code)}</div>
+    </div>
+  `).join('');
+
+  const verificationHtml = (plan.verification_plan || []).map(v => `
+    <li style="margin-bottom:4px;">✓ ${v}</li>
+  `).join('');
+
+  container.innerHTML = `
+    <div class="plan-card">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px; border-bottom:1px solid var(--border-color); padding-bottom:12px;">
+        <div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <h3 style="margin:0; font-size:16px; color:#fff;">${plan.title}</h3>
+            <span class="badge badge-warning">Revision ${plan.revision}</span>
+            <span class="badge ${plan.status === 'EXECUTED' ? 'badge-success' : 'badge-primary'}">${plan.status}</span>
+          </div>
+          <span style="font-size:11px; color:var(--text-muted);">Plan ID: <code>${plan.plan_id}</code> • Domain: <strong>${plan.domain}</strong> • Tenant: ${plan.client_name}</span>
+        </div>
+        <div style="text-align:right;">
+          <span class="badge badge-success" style="font-size:11px;">Risk Score: ${plan.risk_score}</span>
+          <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">${plan.risk_rationale}</div>
+        </div>
+      </div>
+
+      <div style="margin-bottom:16px; font-size:13px; color:#cbd5e1; background:rgba(15,23,42,0.8); padding:12px; border-radius:8px; border:1px solid var(--border-color);">
+        <strong style="color:#38bdf8; display:block; margin-bottom:4px;">Root Cause &amp; Clinical Impact Analysis:</strong>
+        ${plan.root_cause_analysis}
+      </div>
+
+      <h4 style="font-size:13px; color:#fff; margin:16px 0 8px 0;">Synthesized DBT Model Diffs:</h4>
+      ${diffsHtml}
+
+      <div style="background:rgba(2,132,199,0.06); border-left:3px solid #0284c7; padding:10px 14px; border-radius:6px; font-size:12px; margin:16px 0;">
+        <strong style="color:#38bdf8;">Automated Verification Plan:</strong>
+        <ul style="margin:6px 0 0 18px; padding:0; color:#e2e8f0;">
+          ${verificationHtml}
+        </ul>
+      </div>
+
+      <!-- Iterative Plan Refinement Input Bar -->
+      <div style="background:#090e1a; border:1px solid var(--border-color); border-radius:8px; padding:14px; margin-top:18px;">
+        <label style="font-size:12px; font-weight:600; color:#cbd5e1; display:block; margin-bottom:6px;">
+          💬 Have adjustments? Provide feedback to iterate on this implementation plan:
+        </label>
+        <div style="display:flex; gap:8px;">
+          <input type="text" id="refine-iter-comment" class="form-control" style="flex:1; background:#0f172a; border:1px solid var(--border-color); border-radius:6px; color:#fff; padding:8px 12px; font-size:12px;" placeholder="e.g. Include MitraClip item number 536188 in the packaging multiplier override...">
+          <button class="btn btn-secondary btn-sm" onclick="reiteratePlanFromPrompt()">🔄 Reiterate Plan</button>
+        </div>
+      </div>
+
+      <!-- Plan Action Buttons -->
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:18px; padding-top:14px; border-top:1px solid var(--border-color);">
+        <button class="btn btn-secondary btn-sm" onclick="switchRefineSubTab('submit')">← Back to Feedback Form</button>
+        <div style="display:flex; gap:10px;">
+          <button class="btn btn-secondary btn-sm" onclick="switchRefineSubTab('playbook')">📚 View Playbook</button>
+          <button id="btn-exec-refine-plan" class="btn btn-success" onclick="executeActiveRefinementPlan('${plan.plan_id}')" ${plan.status === 'EXECUTED' ? 'disabled' : ''}>
+            ${plan.status === 'EXECUTED' ? '✅ Plan Executed &amp; Certified' : '⚡ Approve &amp; Recompile DBT Pipeline'}
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+async function reiteratePlanFromPrompt() {
+  if (!activeRefinePlan) return;
+  const comment = document.getElementById('refine-iter-comment')?.value.trim();
+  if (!comment) {
+    showToast("Feedback Required", "Please provide a revision comment for the plan.", "warning");
+    return;
+  }
+
+  showToast("Revising Plan", "Incorporating feedback and updating implementation plan...", "info");
+
+  try {
+    const res = await fetch('/api/refinement/reiterate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        plan_id: activeRefinePlan.plan_id,
+        operator_comment: comment
+      })
+    });
+    const data = await res.json();
+    if (!res.ok || data.status !== 'SUCCESS') {
+      showToast("Revision Error", data.message || "Failed to update plan", "error");
+      return;
+    }
+
+    activeRefinePlan = data.plan;
+    renderImplementationPlan(activeRefinePlan);
+    showToast("Plan Updated", `Revision ${activeRefinePlan.revision} created successfully.`, "success");
+    addNotification("Implementation Plan Revised", `Plan ${activeRefinePlan.plan_id} updated to Revision ${activeRefinePlan.revision}`);
+
+    const badge = document.getElementById('refine-plan-badge');
+    if (badge) badge.textContent = `Draft Rev ${activeRefinePlan.revision}`;
+
+  } catch (err) {
+    showToast("Revision Error", err.message, "error");
+  }
+}
+
+async function executeActiveRefinementPlan(planId) {
+  const btn = document.getElementById('btn-exec-refine-plan');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status"></span> ⚙️ Compiling Models &amp; Verifying Tests...';
+  }
+
+  showToast("Executing Plan", "Compiling dbt models, running test suite, and saving institutional learning...", "info");
+
+  try {
+    const res = await fetch('/api/refinement/execute', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ plan_id: planId })
+    });
+    const data = await res.json();
+
+    if (!res.ok || data.status !== 'SUCCESS') {
+      showToast("Execution Error", data.message || "Failed to execute plan", "error");
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '⚡ Approve &amp; Recompile DBT Pipeline';
+      }
+      return;
+    }
+
+    showToast("Pipeline Certified", `Refinement compiled with 100% Golden Parity! Recorded learning ${data.learning_id}.`, "success");
+    addNotification("Refinement Executed & Certified", `Plan ${planId} executed. Models updated: ${(data.models_updated || []).join(', ')}`);
+
+    if (activeRefinePlan) activeRefinePlan.status = 'EXECUTED';
+    renderImplementationPlan(activeRefinePlan);
+
+    // Refresh playbook & data explorer
+    loadPlaybookLearnings();
+    loadPipelineSummary();
+    loadOutputTableData();
+
+  } catch (err) {
+    showToast("Execution Error", err.message, "error");
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '⚡ Approve &amp; Recompile DBT Pipeline';
+    }
+  }
+}
+
+async function loadPlaybookLearnings() {
+  try {
+    const res = await fetch('/api/knowledge/playbook');
+    if (!res.ok) return;
+    const data = await res.json();
+    playbookLearningsCache = data.learnings || [];
+
+    const tbody = document.getElementById('playbook-tbody');
+    const badge = document.getElementById('playbook-count-badge');
+    if (badge) badge.textContent = playbookLearningsCache.length;
+
+    if (!tbody) return;
+
+    if (playbookLearningsCache.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:20px;">No institutional learnings recorded yet.</td></tr>';
+      return;
+    }
+
+    renderPlaybookTable(playbookLearningsCache);
+  } catch (err) {
+    console.error("Failed to load playbook:", err);
+  }
+}
+
+function renderPlaybookTable(items) {
+  const tbody = document.getElementById('playbook-tbody');
+  if (!tbody) return;
+
+  tbody.innerHTML = items.map(l => {
+    let dateStr = l.timestamp || '';
+    try {
+      dateStr = new Date(dateStr).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+    } catch(e) {}
+
+    const models = (l.affected_models || []).map(m => `<code>${m}</code>`).join(' ');
+
+    return `
+      <tr>
+        <td><strong style="color:#38bdf8;">${l.learning_id}</strong></td>
+        <td><span class="badge badge-primary" style="font-size:10px;">${l.category}</span></td>
+        <td>
+          <div style="font-weight:700; color:#fff;">${l.title}</div>
+          <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">${l.rationale}</div>
+        </td>
+        <td><span class="badge badge-secondary" style="font-size:10px;">${l.client_origin || 'UC Health'}</span></td>
+        <td>
+          <div style="color:#34d399; font-size:11px; font-weight:600;">${l.impact}</div>
+          <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">${models}</div>
+        </td>
+        <td style="color:var(--text-muted); font-size:11px;">${dateStr}</td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function filterPlaybookLearnings() {
+  const query = document.getElementById('playbook-search-input')?.value.toLowerCase() || '';
+  if (!query) {
+    renderPlaybookTable(playbookLearningsCache);
+    return;
+  }
+  const filtered = playbookLearningsCache.filter(l => {
+    const s = `${l.learning_id} ${l.title} ${l.rationale} ${l.category} ${(l.affected_models||[]).join(' ')}`.toLowerCase();
+    return s.includes(query);
+  });
+  renderPlaybookTable(filtered);
+}
+
+async function loadGuardrails() {
+  try {
+    const res = await fetch('/api/guardrails/rules');
+    if (!res.ok) return;
+    const data = await res.json();
+    const factors = data.uom_factors || {};
+
+    const tbody = document.getElementById('guardrails-uom-tbody');
+    if (!tbody) return;
+
+    tbody.innerHTML = Object.entries(factors).map(([code, factor]) => {
+      let desc = "Standard clinical package ratio";
+      if (factor === 1.0) desc = "Base clinical each unit";
+      else if (factor === 12.0) desc = "Dozen packaging bundle";
+      else if (factor === 10.0) desc = "Standard surgical box (10 units)";
+      else if (factor === 50.0) desc = "Bulk supply case (50 units)";
+
+      return `
+        <tr>
+          <td><code style="color:#38bdf8; font-weight:700;">${code}</code></td>
+          <td><span class="badge badge-success">${factor}x</span></td>
+          <td>${factor > 1.0 ? '📦 Multipack / Case' : '💊 Base Unit (Each)'}</td>
+          <td style="color:var(--text-muted); font-size:11px;">${desc}</td>
+        </tr>
+      `;
+    }).join('');
+  } catch (err) {
+    console.error("Failed to load guardrails:", err);
+  }
+}
+
+async function loadRecentRefinementPlans() {
+  try {
+    const res = await fetch('/api/refinement/history');
+    if (!res.ok) return;
+    const data = await res.json();
+    const plans = data.plans || [];
+    if (plans.length > 0 && !activeRefinePlan) {
+      activeRefinePlan = plans[0];
+      renderImplementationPlan(activeRefinePlan);
+    }
+  } catch (err) {}
+}
+
+async function exportPlaybookMarkdown() {
+  try {
+    const res = await fetch('/api/knowledge/playbook');
+    const data = await res.json();
+    const md = data.markdown || "# SupplyCopia Institutional Playbook";
+    const blob = new Blob([md], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `SupplyCopia_Clinical_Playbook_${new Date().toISOString().slice(0, 10)}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast("Playbook Exported", "Downloaded living institutional clinical playbook.", "success");
+  } catch (err) {
+    showToast("Export Failed", err.message, "error");
+  }
+}
+
+function escapeHtml(text) {
+  if (!text) return '';
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+

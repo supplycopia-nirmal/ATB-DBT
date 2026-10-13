@@ -17,6 +17,11 @@
   --font-mono: 'JetBrains Mono', monospace;
 }
 
+html {
+  scrollbar-gutter: stable both-edges;
+  overflow-y: scroll;
+}
+
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
@@ -25,12 +30,16 @@ body {
   font-family: var(--font-sans);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  width: 100%;
+  min-height: 100vh;
 }
 
 .app-container {
-  max-width: 1720px;
-  margin: 0 auto;
-  padding: 20px 28px 100px 28px;
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  padding: 18px 28px 100px 28px;
+  box-sizing: border-box;
 }
 
 /* Tier 1: Global Enterprise Header */
@@ -438,10 +447,12 @@ body {
 .drilldown-hint { color: #38bdf8; font-weight: 600; font-size: 11px; }
 
 /* Tab Content */
-.stage-section { display: none; }
-.stage-section.active { display: block; }
+.stage-section { display: none; width: 100%; box-sizing: border-box; }
+.stage-section.active { display: block; width: 100%; }
 
 .card {
+  width: 100%;
+  box-sizing: border-box;
   background: var(--bg-card);
   border: 1px solid var(--border-color);
   border-radius: 10px;
@@ -1568,4 +1579,66 @@ body {
 @keyframes slideInRight {
   from { transform: translateX(100%); opacity: 0; }
   to { transform: translateX(0); opacity: 1; }
+}
+
+/* Stage 7 Refinement & Institutional Evolution Styles */
+.refine-pane {
+  display: block;
+  animation: fadeIn 0.2s ease;
+}
+
+.file-dropzone {
+  border: 2px dashed rgba(56, 189, 248, 0.4);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.6);
+  padding: 24px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.file-dropzone:hover {
+  border-color: #38bdf8;
+  background: rgba(56, 189, 248, 0.08);
+}
+
+.diff-viewer-box {
+  background: #090e1a;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: #e2e8f0;
+  overflow-x: auto;
+  white-space: pre;
+  margin-top: 8px;
+}
+.diff-line-add { color: #34d399; background: rgba(52, 211, 153, 0.1); display: block; }
+.diff-line-del { color: #f87171; background: rgba(239, 68, 68, 0.1); display: block; }
+.diff-line-info { color: #38bdf8; }
+
+.plan-card {
+  background: #0b1329;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 18px 20px;
+  margin-bottom: 16px;
+}
+
+.attached-file-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #1e293b;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  color: #e2e8f0;
+}
+.attached-file-remove {
+  color: #f87171;
+  cursor: pointer;
+  font-weight: 700;
 }

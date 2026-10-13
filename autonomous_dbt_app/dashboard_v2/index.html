@@ -172,6 +172,9 @@
         <button class="step-item" id="step-btn-parity" onclick="switchStage('parity')">
           <span class="step-num">6</span> 🎯 100% Golden Parity Audit
         </button>
+        <button class="step-item" id="step-btn-refine" onclick="switchStage('refine')">
+          <span class="step-num">7</span> 🔄 Refine &amp; Evolve
+        </button>
       </nav>
 
       <!-- Stage 1: Cloud Ingestion & Multi-Tenancy -->
@@ -367,7 +370,7 @@
               <h3>Stage 5: Output Data Explorer &amp; Clinical Gap Analysis</h3>
               <span class="card-hint">All output tables retain 100% of input dataset columns + newly engineered transformation and audit metadata columns</span>
             </div>
-            <div class="controls">
+            <div class="controls" style="display: flex; gap: 8px; align-items: center;">
               <select id="select-output-table" onchange="loadOutputTableData()">
                 <option value="fct_consumption_cost_savings_v4">Marts: fct_consumption_cost_savings_v4 (All Input Cols + 129 enriched)</option>
                 <option value="fct_po_cost_savings_v4">Marts: fct_po_cost_savings_v4 (All Input Cols + 34 enriched)</option>
@@ -376,6 +379,7 @@
                 <option value="sc_multi_tenant_po_savings">Multi-Tenant: sc_multi_tenant_po_savings</option>
                 <option value="unmapped">⚠️ Review Unmapped &amp; Off-Contract Records</option>
               </select>
+              <button class="btn btn-secondary btn-sm" onclick="openRefineWithTableContext()" title="Provide clinical finding or feedback on this output mart">💬 Submit Finding</button>
             </div>
           </div>
           <div class="card-body">
@@ -479,6 +483,161 @@
           </div>
         </div>
       </section>
+
+      <!-- Stage 7: Clinical & Analytics Retrospective Refinement & Institutional Evolution -->
+      <section id="stage-refine" class="stage-section">
+        <div class="card">
+          <div class="card-header flex-header">
+            <div>
+              <h3>Stage 7: Clinical &amp; Analytics Retrospective Refinement &amp; Self-Evolution</h3>
+              <span class="card-hint">Retrospectively analyze Snowflake output, ingest multi-modal clinical evidence &amp; python scripts, iteratively synthesize implementation plans, and evolve future dbt pipelines.</span>
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <button class="btn btn-secondary btn-sm" onclick="exportPlaybookMarkdown()">📥 Export Playbook</button>
+              <button class="btn btn-primary btn-sm" onclick="openNewFindingForm()">➕ Submit New Finding</button>
+            </div>
+          </div>
+          <div class="card-body">
+            <!-- Stage 7 Sub-Navigation Pills -->
+            <div class="tab-pills" style="margin-bottom: 20px;">
+              <button class="tab-pill active" id="tab-refine-submit" onclick="switchRefineSubTab('submit')">📝 Submit Clinical Findings &amp; Code</button>
+              <button class="tab-pill" id="tab-refine-plan" onclick="switchRefineSubTab('plan')">📐 Interactive Implementation Plan <span id="refine-plan-badge" class="badge badge-warning" style="display:none; font-size:10px; padding:2px 6px;">Draft Active</span></button>
+              <button class="tab-pill" id="tab-refine-playbook" onclick="switchRefineSubTab('playbook')">📚 Institutional Playbook (<span id="playbook-count-badge">4</span> Learnings)</button>
+              <button class="tab-pill" id="tab-refine-guardrails" onclick="switchRefineSubTab('guardrails')">🛡️ Clinical Sanitization Guardrails</button>
+            </div>
+
+            <!-- Sub-Pane 1: Multi-Modal Submission Form -->
+            <div id="refine-pane-submit" class="refine-pane">
+              <div class="info-callout" style="margin-bottom: 16px;">
+                <strong>Multi-Modal Retrospective Feedback:</strong> Clinical and analytics teams can describe identified discrepancies, attach evidence spreadsheets/screenshots, and optionally supply Python fix scripts or custom SQL logic. The swarm will generate a non-breaking implementation plan for iterative review.
+              </div>
+
+              <!-- Quick Templates Bar -->
+              <div style="margin-bottom: 14px;">
+                <span style="font-size: 11px; color: var(--text-muted); font-weight: 600; text-transform: uppercase;">Quick Feedback Templates:</span>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px;">
+                  <button class="btn btn-secondary btn-sm" onclick="applyRefineTemplate('uom')">💊 Box vs Each (UOM) Mismatch</button>
+                  <button class="btn btn-secondary btn-sm" onclick="applyRefineTemplate('vendor')">🏷️ Vendor Alias Consolidation</button>
+                  <button class="btn btn-secondary btn-sm" onclick="applyRefineTemplate('procedure')">🏥 Procedure Group Reclassification</button>
+                  <button class="btn btn-secondary btn-sm" onclick="applyRefineTemplate('typo')">⚠️ 10x Price Outlier Typo</button>
+                </div>
+              </div>
+
+              <div class="form-grid" style="display: grid; grid-template-columns: 1.2fr 1fr; gap: 20px;">
+                <!-- Left Column: Text & Files -->
+                <div>
+                  <div class="form-group">
+                    <label for="refine-feedback-input">Clinical Finding / Issue Description *</label>
+                    <textarea id="refine-feedback-input" rows="5" class="form-control" style="width: 100%; box-sizing: border-box; background: #090e1a; color: #fff; border: 1px solid var(--border-color); border-radius: 6px; padding: 10px; font-size: 13px;" placeholder="e.g. Clinical team identified that item 536188 was billed at $30,000 for Drg 183. Review of invoice confirms this is a Box of 2 (BX/2) units, meaning true each price is $15,000..."></textarea>
+                  </div>
+
+                  <!-- File Attachments Dropzone -->
+                  <div class="form-group">
+                    <label>Supporting Evidence Files (Excel, CSV, Screenshots, PDF)</label>
+                    <div id="refine-dropzone" class="file-dropzone" onclick="document.getElementById('refine-file-input').click()">
+                      <input type="file" id="refine-file-input" multiple accept=".csv,.xlsx,.xls,.png,.jpg,.jpeg,.pdf" style="display: none;" onchange="handleRefineFilesSelected(event)">
+                      <div style="font-size: 24px; margin-bottom: 6px;">📎</div>
+                      <div style="font-weight: 600; font-size: 13px; color: #e2e8f0;">Click to attach or drag &amp; drop evidence files</div>
+                      <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">Supports vendor price sheets, clinical discrepancy exports, and invoice screenshots</div>
+                    </div>
+                    <div id="refine-attached-files-list" style="margin-top: 10px; display: flex; flex-direction: column; gap: 6px;"></div>
+                  </div>
+                </div>
+
+                <!-- Right Column: Python / SQL Script Editor -->
+                <div>
+                  <div class="form-group">
+                    <label for="refine-code-input">Optional Python / SQL Fix Script (Proposed Code Patch)</label>
+                    <textarea id="refine-code-input" rows="12" class="form-control" style="width: 100%; box-sizing: border-box; background: #090e1a; color: #38bdf8; font-family: var(--font-mono); border: 1px solid var(--border-color); border-radius: 6px; padding: 10px; font-size: 12px; line-height: 1.4;" placeholder="# Optional: Provide a python function or SQL snippet with suggested logic&#10;def normalize_mitraclip_uom(row):&#10;    if row['item_number'] == '536188' and row['uom'] == 'BX':&#10;        return row['supply_unit_price'] / 2.0&#10;    return row['supply_unit_price']"></textarea>
+                    <div class="form-hint">Our Architect Swarm will cross-reference this logic with existing dbt staging and marts models.</div>
+                  </div>
+
+                  <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px;">
+                    <button class="btn btn-secondary" onclick="clearRefinementForm()">Clear Form</button>
+                    <button class="btn btn-primary" onclick="submitClinicalFeedback()">🚀 Synthesize Implementation Plan</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Sub-Pane 2: Interactive Implementation Plan Review & Iterative Re-prompting -->
+            <div id="refine-pane-plan" class="refine-pane" style="display: none;">
+              <div id="refine-plan-container">
+                <div style="text-align: center; padding: 40px; color: var(--text-muted);">
+                  No active implementation plan. Submit clinical feedback or select an existing plan below to inspect diffs and iterate.
+                </div>
+              </div>
+            </div>
+
+            <!-- Sub-Pane 3: Institutional Knowledge Playbook -->
+            <div id="refine-pane-playbook" class="refine-pane" style="display: none;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+                <div>
+                  <h4 style="margin: 0; font-size: 14px; color: #38bdf8;">Continuous Self-Evolution Knowledge Ledger</h4>
+                  <span style="font-size: 11px; color: var(--text-muted);">Documented clinical heuristics, vendor mappings, and packaging ratios that automatically propagate to all future client dbt pipelines.</span>
+                </div>
+                <input type="text" id="playbook-search-input" onkeyup="filterPlaybookLearnings()" placeholder="Search heuristics by keyword..." style="background: #090e1a; border: 1px solid var(--border-color); border-radius: 6px; padding: 6px 12px; font-size: 12px; color: #fff; width: 260px;">
+              </div>
+              <div class="table-container" style="max-height: 500px;">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Learning ID</th>
+                      <th>Category</th>
+                      <th>Title &amp; Clinical Heuristic</th>
+                      <th>Origin</th>
+                      <th>Impact &amp; Models Affected</th>
+                      <th>Documented Date</th>
+                    </tr>
+                  </thead>
+                  <tbody id="playbook-tbody">
+                    <!-- Populated dynamically -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Sub-Pane 4: Active Clinical Guardrails Framework -->
+            <div id="refine-pane-guardrails" class="refine-pane" style="display: none;">
+              <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 20px;">
+                <div class="kpi-card highlight">
+                  <div class="kpi-label">UOM Packaging Matrix</div>
+                  <div class="kpi-value">27 Units</div>
+                  <div class="kpi-sub">Standardized packaging multipliers (EA, BX, CS, PK, DZ)</div>
+                </div>
+                <div class="kpi-card success">
+                  <div class="kpi-label">Statistical Spike Outlier Bounds</div>
+                  <div class="kpi-value">&gt;3.0 Z-Score</div>
+                  <div class="kpi-sub">Catches 10x/100x decimal entry typos via rolling medians</div>
+                </div>
+                <div class="kpi-card warning">
+                  <div class="kpi-label">Contract Sanity Thresholds</div>
+                  <div class="kpi-value">&gt;2.5x or &lt;0.2x</div>
+                  <div class="kpi-sub">Automatically flags packaging ratio mismatches vs contract</div>
+                </div>
+              </div>
+
+              <h4 style="font-size: 13px; color: #cbd5e1; margin-bottom: 8px;">Active Packaging Factor Harmonization Rules:</h4>
+              <div class="table-container" style="max-height: 280px; margin-bottom: 20px;">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>UOM Code</th>
+                      <th>Multiplier Factor</th>
+                      <th>Packaging Hierarchy</th>
+                      <th>Clinical Application</th>
+                    </tr>
+                  </thead>
+                  <tbody id="guardrails-uom-tbody">
+                    <!-- Populated dynamically -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </section>
     </div>
   </div>
 
@@ -561,9 +720,12 @@
 
         <div id="sf-progress" style="margin-top: 15px; font-size: 13px; font-weight: 600;"></div>
       </div>
-      <div class="modal-footer">
-        <button class="btn btn-secondary" onclick="closeSnowflakeModal()">Cancel</button>
-        <button id="btn-confirm-sf" class="btn btn-snowflake" onclick="confirmCustomSnowflakePush()">🚀 Execute Push to Snowflake</button>
+      <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
+        <button class="btn btn-secondary btn-sm" onclick="closeSnowflakeModal(); switchStage('refine');" style="margin-right: auto;">🔄 Retrospectively Refine Pipeline</button>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn btn-secondary" onclick="closeSnowflakeModal()">Cancel</button>
+          <button id="btn-confirm-sf" class="btn btn-snowflake" onclick="confirmCustomSnowflakePush()">🚀 Execute Push to Snowflake</button>
+        </div>
       </div>
     </div>
   </div>
