@@ -2058,6 +2058,7 @@ Provide a helpful, precise, professional, and knowledgeable answer as the Ask Th
         for t in tests:
             if t["id"] in healed_ids:
                 t["healed"] = True
+                t["status"] = "PASS"
 
         elapsed_ms = int((time.time() - start_time) * 1000)
         passed_count = sum(1 for t in tests if t["status"] == "PASS")

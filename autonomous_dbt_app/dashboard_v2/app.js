@@ -1444,7 +1444,7 @@ function switchTestTab(tab) {
   }
 }
 
-async function runAutomatedTestSuite() {
+async function runAutomatedTestSuite(autoOpenOnFail = true) {
   const btn = document.getElementById('btn-run-tests');
   if (btn) {
     btn.disabled = true;
@@ -1487,7 +1487,9 @@ async function runAutomatedTestSuite() {
         const failedTest = tests.find(t => t.status === 'FAIL');
         const errDetail = `${failedTest.id}: ${failedTest.assertion} failed on ${failedTest.target}. ${failedTest.metric} (Expected: ${failedTest.sql})`;
         showToast("Assertion Failure Detected", `${data.failed} test assertion failed. Generating auto-resolve plan...`, "warning");
-        openAutoResolveModal(errDetail, `Automated Test Suite (${failedTest.id})`);
+        if (autoOpenOnFail) {
+          openAutoResolveModal(errDetail, `Automated Test Suite (${failedTest.id})`);
+        }
       } else {
         showToast("Test Suite Passed", `Executed ${data.total_assertions} automated test assertions (${data.compliance_rate} pass rate).`, "success");
         addNotification("Automated Test Suite", `Full test suite completed in ${data.execution_time_ms}ms with 100% compliance.`);
@@ -2332,7 +2334,7 @@ async function executeAutoResolvePlan() {
 
       // Crucial: Re-run automated test suite so Stage 6 test turns green!
       if (typeof runAutomatedTestSuite === 'function') {
-        setTimeout(runAutomatedTestSuite, 300);
+        setTimeout(() => runAutomatedTestSuite(false), 300);
       }
     } else {
       showToast("Auto-Resolve Failed", data.message || "Failed to execute resolution patch.", "error");
