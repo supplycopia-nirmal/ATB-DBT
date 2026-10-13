@@ -149,6 +149,49 @@ class TestConfluenceConnector(unittest.TestCase):
         self.assertEqual(res["action"], "CREATED")
         self.assertEqual(res["page_id"], "123456")
 
+    @patch("urllib.request.urlopen")
+    def test_upload_attachment_mocked(self, mock_urlopen):
+        mock_response = MagicMock()
+        mock_response.__enter__.return_value = mock_response
+        mock_response.status = 200
+        mock_response.read.return_value = b'{"results": [{"id": "att-99", "title": "test_logo.png"}]}'
+        mock_urlopen.return_value = mock_response
+
+        with tempfile.NamedTemporaryFile(suffix=".png") as tmp_img:
+            tmp_img.write(b"\x89PNG\r\n\x1a\nfakeimagecontent")
+            tmp_img.flush()
+            res = self.connector.upload_attachment("123456", Path(tmp_img.name), "test_logo.png")
+            self.assertEqual(res["status"], "SUCCESS")
+            self.assertEqual(res["filename"], "test_logo.png")
+
+
+class TestConfluenceSpaceBuilder(unittest.TestCase):
+    def test_manifest_and_section_blueprints(self):
+        from autonomous_dbt_app.core.confluence_space_builder import ConfluenceSpaceBuilder, space_builder
+        builder = space_builder
+        # Check master hub and sections generate valid storage xhtml
+        hub_content = builder.get_master_hub_content("2026-10-13 12:00:00 UTC")
+        self.assertIn("Master Documentation Index", hub_content)
+        self.assertIn("Executive Summary", hub_content)
+
+        sec1 = builder.get_section_1_content()
+        self.assertIn("Queen Bee Orla", sec1)
+        self.assertIn("Sentinel Aegis", sec1)
+
+        sec8 = builder.get_section_8_content()
+        self.assertIn("243,934,093.08", sec8)
+        self.assertIn("100% Golden Parity", sec8)
+
+        # Check published manifest exists and has all 13 entries
+        manifest_file = Path("agent_memory/confluence_docs_cache/full_space_manifest.json")
+        self.assertTrue(manifest_file.exists())
+        import json
+        with open(manifest_file, "r") as f:
+            manifest = json.load(f)
+        self.assertEqual(manifest["space_key"], "ATBDBT")
+        self.assertEqual(manifest["total_sections"], 12)
+        self.assertEqual(len(manifest["results"]), 13)
+
 
 class TestJiraConnector(unittest.TestCase):
     def setUp(self):

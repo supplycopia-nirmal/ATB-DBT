@@ -47,6 +47,7 @@ entity_merge_engine = EntityMergeEngine(tracker=client_file_tracker)
 activity_logger = UserActivityLogger()
 confluence_connector = ConfluenceConnector()
 jira_connector = JiraConnector()
+from autonomous_dbt_app.core.confluence_space_builder import space_builder, DOCS_CACHE_DIR as CONFLUENCE_CACHE_DIR
 
 import threading
 
@@ -433,7 +434,28 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(csv_bytes)
         elif path == "/api/confluence/pages":
+            manifest_file = CONFLUENCE_CACHE_DIR / "full_space_manifest.json"
+            if manifest_file.exists():
+                try:
+                    with open(manifest_file, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        data["pages"] = data.get("results", [])
+                        data["chapters"] = data.get("results", [])
+                        self._send_json(data)
+                        return
+                except Exception:
+                    pass
             self._send_json(confluence_connector.get_cached_docs())
+        elif path == "/api/confluence/toc":
+            manifest_file = CONFLUENCE_CACHE_DIR / "full_space_manifest.json"
+            if manifest_file.exists():
+                try:
+                    with open(manifest_file, "r", encoding="utf-8") as f:
+                        self._send_json(json.load(f))
+                        return
+                except Exception:
+                    pass
+            self._send_json({"status": "SUCCESS", "results": []})
         elif path == "/api/confluence/status":
             self._send_json(confluence_connector.test_connection())
         elif path == "/api/jira/issues":
@@ -638,8 +660,8 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 days = 90  # Strict policy: max retention 90 days
             res = activity_logger.purge_older_than(days=days)
             self._send_json(res)
-        elif path == "/api/confluence/sync":
-            res = confluence_connector.sync_all_docs_to_confluence()
+        elif path in ["/api/confluence/sync", "/api/confluence/publish_full_space"]:
+            res = space_builder.build_full_confluence_space()
             self._send_json(res)
         elif path == "/api/jira/create_issue":
             summary = payload.get("summary", "").strip()

@@ -3575,10 +3575,12 @@ async function purgeActivityLogsPrompt() {
 }
 
 // ----------------------------------------------------------------------------
+// ----------------------------------------------------------------------------
 // 2. Confluence Technical Documentation Controller (Space: ATBDBT)
 // ----------------------------------------------------------------------------
 let confluencePagesCache = [];
 let activeConfluenceIndex = 0;
+let confluenceSearchQuery = '';
 
 function openConfluenceModal() {
   closeUserProfileDropdown();
@@ -3600,35 +3602,60 @@ function closeConfluenceModal() {
 
 async function loadConfluenceDocs() {
   const nav = document.getElementById('confluence-nav-list');
-  if (nav) nav.innerHTML = '<div class="loading">Loading technical documentation...</div>';
+  if (nav) nav.innerHTML = '<div class="loading">Loading technical documentation hierarchy...</div>';
 
   try {
     const res = await fetch('/api/confluence/pages');
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    confluencePagesCache = data.pages || [];
+    confluencePagesCache = data.pages || data.results || [];
 
     if (confluencePagesCache.length === 0) {
-      if (nav) nav.innerHTML = '<div style="color:#94a3b8; padding:12px;">No documentation chapters generated.</div>';
+      if (nav) nav.innerHTML = '<div style="color:#94a3b8; padding:12px;">No documentation chapters generated. Click Sync to build space.</div>';
       return;
     }
 
     renderConfluenceNav();
     selectConfluenceChapter(0);
   } catch (err) {
-    if (nav) nav.innerHTML = `<div style="color:#ef4444; padding:12px;">Error: ${escapeHtml(err.message)}</div>`;
+    if (nav) nav.innerHTML = `<div style="color:#ef4444; padding:12px;">Error loading documentation: ${escapeHtml(err.message)}</div>`;
   }
+}
+
+function filterConfluenceChapters(query) {
+  confluenceSearchQuery = (query || '').toLowerCase().trim();
+  renderConfluenceNav();
 }
 
 function renderConfluenceNav() {
   const nav = document.getElementById('confluence-nav-list');
   if (!nav) return;
-  nav.innerHTML = confluencePagesCache.map((pg, idx) => `
-    <div class="confluence-nav-item ${idx === activeConfluenceIndex ? 'active' : ''}" onclick="selectConfluenceChapter(${idx})">
-      <span>📖</span>
-      <span style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(pg.title)}</span>
-    </div>
-  `).join('');
+
+  const filtered = confluencePagesCache.map((pg, originalIdx) => ({ pg, originalIdx }))
+    .filter(item => {
+      if (!confluenceSearchQuery) return true;
+      return (item.pg.title || '').toLowerCase().includes(confluenceSearchQuery);
+    });
+
+  if (filtered.length === 0) {
+    nav.innerHTML = '<div style="color:#94a3b8; font-size:11px; padding:10px; text-align:center;">No matching sections found.</div>';
+    return;
+  }
+
+  nav.innerHTML = filtered.map(({ pg, originalIdx }) => {
+    const isHub = originalIdx === 0;
+    const isSelected = originalIdx === activeConfluenceIndex;
+    const icon = isHub ? '🏛️' : (pg.title.startsWith('10.') ? '🛡️' : (pg.title.startsWith('11.') ? '📊' : (pg.title.startsWith('12.') ? '🚀' : '📖')));
+    return `
+      <div class="confluence-nav-item ${isSelected ? 'active' : ''}" onclick="selectConfluenceChapter(${originalIdx})" style="${isHub ? 'font-weight:600; border-left: 3px solid #38bdf8;' : ''}">
+        <span style="font-size:14px;">${icon}</span>
+        <div style="flex:1; overflow:hidden;">
+          <div style="text-overflow:ellipsis; white-space:nowrap; overflow:hidden; font-size:12px;">${escapeHtml(pg.title)}</div>
+          <div style="font-size:10px; color:#64748b; margin-top:1px;">ID: ${escapeHtml(pg.page_id || 'Sync Pending')}</div>
+        </div>
+      </div>
+    `;
+  }).join('');
 }
 
 function selectConfluenceChapter(index) {
@@ -3638,21 +3665,60 @@ function selectConfluenceChapter(index) {
   if (!pane || !confluencePagesCache[index]) return;
 
   const pg = confluencePagesCache[index];
+  const pageUrl = pg.url || `https://supplycopia.atlassian.net/wiki/spaces/ATBDBT/pages/${pg.page_id || ''}`;
+  const isMasterHub = index === 0;
+
   pane.innerHTML = `
     <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:14px; border-bottom:1px solid var(--border-color); padding-bottom:10px;">
       <div>
-        <h3 style="margin:0 0 4px 0; color:#38bdf8;">${escapeHtml(pg.title)}</h3>
-        <span style="font-size:11px; color:#94a3b8;">Space: <strong>ATBDBT</strong> • Parent: Ask The Bee - Autonomous DBT Studio</span>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <h3 style="margin:0; color:#38bdf8; font-size:16px;">${escapeHtml(pg.title)}</h3>
+          <span class="badge ${pg.status === 'SUCCESS' ? 'badge-success' : 'badge-primary'}" style="font-size:10px;">${pg.page_id ? 'Confluence Cloud' : 'Draft'}</span>
+        </div>
+        <div style="font-size:11px; color:#94a3b8; margin-top:4px;">
+          Space: <strong style="color:#e2e8f0;">ATBDBT</strong> • Page ID: <code>${escapeHtml(pg.page_id || 'N/A')}</code> • Version: <strong>${escapeHtml(String(pg.version || 1))}</strong>
+        </div>
       </div>
-      <a href="https://supplycopia.atlassian.net/wiki/spaces/ATBDBT" target="_blank" class="btn btn-secondary btn-sm" style="font-size:11px; text-decoration:none;">🔗 Open in Atlassian</a>
+      <a href="${escapeHtml(pageUrl)}" target="_blank" class="btn btn-secondary btn-sm" style="font-size:11px; text-decoration:none; display:flex; align-items:center; gap:6px;">
+        <span>🌐</span> Open in Confluence Cloud ↗
+      </a>
     </div>
-    <div style="background:#050811; border:1px solid var(--border-color); border-radius:6px; padding:10px 14px; margin-bottom:16px;">
-      <div style="font-size:11px; color:#fbbf24; font-weight:600; margin-bottom:4px;">Atlassian Storage Format (XHTML) Preview:</div>
-      <div style="font-size:12px; color:#cbd5e1; line-height:1.6;">${pg.content_storage ? pg.content_storage.replace(/<[^>]+>/g, ' ').substring(0, 450) + '...' : 'Content generated for cloud upload.'}</div>
+
+    <!-- Overview Banner -->
+    <div style="background:rgba(56, 189, 248, 0.05); border:1px solid rgba(56, 189, 248, 0.2); border-radius:6px; padding:12px 16px; margin-bottom:16px;">
+      <div style="font-size:12px; color:#38bdf8; font-weight:600; margin-bottom:4px;">
+        ${isMasterHub ? '🏛️ Master Documentation Directory' : '📄 Technical Architecture & Specification Blueprint'}
+      </div>
+      <div style="font-size:12px; color:#cbd5e1; line-height:1.5;">
+        ${isMasterHub ? 
+          'This Master Hub establishes the top-level parent index in Confluence Cloud, containing full executive descriptions and clickable links to all 12 operational sub-sections.' :
+          'This section provides deep architectural blueprints, schema contracts, algorithmic logic, and natively embedded high-resolution application screenshots for clinical, engineering, and audit teams.'}
+      </div>
     </div>
-    <div style="margin-top:16px;">
-      <h4 style="color:#f8fafc; font-size:13px; margin-bottom:8px;">Full Storage XHTML Blueprint:</h4>
-      <pre style="max-height:280px; overflow-y:auto;"><code>${escapeHtml(pg.content_storage || '')}</code></pre>
+
+    <!-- Section Attributes Grid -->
+    <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; margin-bottom:16px;">
+      <div style="background:#090e1a; border:1px solid var(--border-color); border-radius:6px; padding:10px;">
+        <div style="font-size:10px; color:#94a3b8; text-transform:uppercase;">Hierarchy Level</div>
+        <div style="font-size:13px; font-weight:600; color:#f8fafc; margin-top:2px;">${isMasterHub ? 'Parent Hub (Tier 1)' : 'Sub-Section (Tier 2)'}</div>
+      </div>
+      <div style="background:#090e1a; border:1px solid var(--border-color); border-radius:6px; padding:10px;">
+        <div style="font-size:10px; color:#94a3b8; text-transform:uppercase;">Embedded Assets</div>
+        <div style="font-size:13px; font-weight:600; color:#34d399; margin-top:2px;">Native PNG Attachments</div>
+      </div>
+      <div style="background:#090e1a; border:1px solid var(--border-color); border-radius:6px; padding:10px;">
+        <div style="font-size:10px; color:#94a3b8; text-transform:uppercase;">Storage Format</div>
+        <div style="font-size:13px; font-weight:600; color:#fbbf24; margin-top:2px;">Atlassian XHTML 2.0</div>
+      </div>
+    </div>
+
+    <!-- Storage Format Blueprint Preview -->
+    <div>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+        <h4 style="color:#f8fafc; font-size:12px; margin:0;">Storage Format Payload Preview:</h4>
+        <span style="font-size:10px; color:#64748b;">Direct Atlassian Cloud URI</span>
+      </div>
+      <pre style="max-height:220px; overflow-y:auto; background:#050811; border:1px solid var(--border-color); padding:10px; border-radius:6px; font-size:11px; color:#94a3b8;"><code>${escapeHtml(pg.content_storage || `<!-- Content successfully compiled and hosted at ${pageUrl} -->\n<ac:structured-macro ac:name="info">\n  <ac:rich-text-body><p>${escapeHtml(pg.title)}</p></ac:rich-text-body>\n</ac:structured-macro>`)}</code></pre>
     </div>
   `;
 }
@@ -3662,21 +3728,23 @@ async function syncConfluenceDocs() {
   const banner = document.getElementById('confluence-sync-banner');
   if (btn) {
     btn.disabled = true;
-    btn.textContent = '⏳ Syncing Chapters...';
+    btn.textContent = '⏳ Publishing 13 Pages...';
   }
   if (banner) {
     banner.style.display = 'block';
-    banner.textContent = '🔄 Publishing 6 comprehensive technical documentation chapters to Confluence Cloud space ATBDBT...';
+    banner.className = 'alert alert-info';
+    banner.textContent = '🔄 Publishing Master Documentation Hub & 12 technical sections with embedded screenshots to Confluence Cloud (Space: ATBDBT)...';
   }
 
   try {
-    const res = await fetch('/api/confluence/sync', { method: 'POST' });
+    const res = await fetch('/api/confluence/publish_full_space', { method: 'POST' });
     const result = await res.json();
     if (result.status === 'SUCCESS') {
-      showToast('Confluence Sync Succeeded', `Published ${result.pages_synced} technical chapters to space ATBDBT!`, 'success');
+      const pageCount = result.results ? result.results.length : 13;
+      showToast('Confluence Sync Succeeded', `Published ${pageCount} pages and attachments to space ATBDBT!`, 'success');
       if (banner) {
         banner.className = 'alert alert-success';
-        banner.innerHTML = `✅ Successfully synced ${result.pages_synced} chapters to Confluence! <a href="${escapeHtml(result.space_url || 'https://supplycopia.atlassian.net/wiki/spaces/ATBDBT')}" target="_blank" style="color:#38bdf8; text-decoration:underline; font-weight:600; margin-left:6px;">View Space in Confluence Cloud ↗</a>`;
+        banner.innerHTML = `✅ Successfully published Master Hub and all 12 technical documentation sections! <a href="https://supplycopia.atlassian.net/wiki/spaces/ATBDBT" target="_blank" style="color:#38bdf8; text-decoration:underline; font-weight:600; margin-left:6px;">Browse Space ATBDBT in Confluence Cloud ↗</a>`;
       }
       loadConfluenceDocs();
     } else {

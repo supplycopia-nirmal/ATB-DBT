@@ -8,10 +8,12 @@ import os
 import sys
 import json
 import time
+import uuid
+import mimetypes
 import base64
 import urllib.request
 import urllib.error
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Union
 from pathlib import Path
 from datetime import datetime
 
@@ -22,6 +24,8 @@ from autonomous_dbt_app.config import (
 
 DOCS_CACHE_DIR = PROJECT_ROOT / "agent_memory" / "confluence_docs_cache"
 DOCS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+DOCS_ASSETS_DIR = PROJECT_ROOT / "agent_memory" / "docs_assets"
+DOCS_ASSETS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 class ConfluenceConnector:
@@ -122,6 +126,8 @@ class ConfluenceConnector:
                     }
                 }
             }
+            if parent_id:
+                payload["ancestors"] = [{"id": str(parent_id)}]
             url = f"{self.base_url}/content/{page_id}"
             req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=self._get_headers(), method="PUT")
             action = "UPDATED"
@@ -162,6 +168,59 @@ class ConfluenceConnector:
             return {"status": "ERROR", "title": title, "code": e.code, "message": err_body}
         except Exception as e:
             return {"status": "ERROR", "title": title, "message": str(e)}
+
+    def upload_attachment(
+        self,
+        page_id: str,
+        file_path: Union[str, Path],
+        filename: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Uploads a binary attachment (e.g. PNG screenshot) to a Confluence page using multipart/form-data.
+        """
+        path = Path(file_path)
+        if not path.exists():
+            return {"status": "ERROR", "message": f"File not found: {file_path}"}
+
+        upload_filename = filename or path.name
+        mime_type = mimetypes.guess_type(str(path))[0] or "application/octet-stream"
+
+        with open(path, "rb") as f:
+            file_bytes = f.read()
+
+        boundary = "----ConfluenceBoundary" + uuid.uuid4().hex
+        headers = {
+            "Authorization": self._get_headers()["Authorization"],
+            "X-Atlassian-Token": "nocheck",
+            "Content-Type": f"multipart/form-data; boundary={boundary}"
+        }
+
+        body = (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="file"; filename="{upload_filename}"\r\n'
+            f"Content-Type: {mime_type}\r\n\r\n"
+        ).encode("utf-8") + file_bytes + f"\r\n--{boundary}--\r\n".encode("utf-8")
+
+        url = f"{self.base_url}/content/{page_id}/child/attachment"
+        req = urllib.request.Request(url, data=body, headers=headers, method="POST")
+
+        try:
+            with urllib.request.urlopen(req, timeout=35) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                results = data.get("results", [])
+                att = results[0] if results else {}
+                return {
+                    "status": "SUCCESS",
+                    "attachment_id": att.get("id"),
+                    "title": att.get("title", upload_filename),
+                    "filename": upload_filename,
+                    "page_id": page_id
+                }
+        except urllib.error.HTTPError as e:
+            err_body = e.read().decode("utf-8") if e.fp else str(e)
+            return {"status": "ERROR", "filename": upload_filename, "code": e.code, "message": err_body}
+        except Exception as e:
+            return {"status": "ERROR", "filename": upload_filename, "message": str(e)}
 
     def generate_technical_documentation(self) -> List[Dict[str, Any]]:
         """

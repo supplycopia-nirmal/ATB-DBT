@@ -1419,8 +1419,13 @@
         <div id="confluence-sync-banner" style="display: none; margin-bottom: 14px;" class="alert alert-info"></div>
         <div class="confluence-layout">
           <!-- Left Nav: Chapters -->
-          <div class="confluence-nav" id="confluence-nav-list">
-            <div class="loading">Loading technical chapters...</div>
+          <div class="confluence-nav-container" style="display: flex; flex-direction: column; width: 320px; flex-shrink: 0; border-right: 1px solid var(--border-color); background: #070b14;">
+            <div style="padding: 10px 12px; border-bottom: 1px solid var(--border-color);">
+              <input type="text" id="confluence-search-input" onkeyup="filterConfluenceChapters(this.value)" placeholder="🔍 Search sections or stages..." style="width: 100%; box-sizing: border-box; background: #0d1527; border: 1px solid var(--border-color); border-radius: 6px; padding: 6px 10px; font-size: 12px; color: #fff;">
+            </div>
+            <div class="confluence-nav" id="confluence-nav-list" style="overflow-y: auto; flex: 1; max-height: 540px;">
+              <div class="loading">Loading technical chapters...</div>
+            </div>
           </div>
           <!-- Right Pane: Chapter Preview & Specs -->
           <div class="confluence-content-pane" id="confluence-content-pane">
