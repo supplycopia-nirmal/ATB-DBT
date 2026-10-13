@@ -32,4 +32,4 @@ aggregated as (
         coalesce(patient_type, 'Inpatient')
 )
 
-select * from aggregated
+select * from aggregated;

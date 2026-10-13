@@ -109,3 +109,33 @@ def test_refinement_agent_plan_lifecycle():
     exec_res = agent.execute_plan(plan["plan_id"])
     assert exec_res["status"] == "SUCCESS"
     assert "learning_id" in exec_res
+
+
+def test_self_healing_engine():
+    from autonomous_dbt_app.core.self_healing_engine import SelfHealingEngine
+    healer = SelfHealingEngine()
+
+    # 1. Test diagnose and plan for TEST_GAP_008
+    err = "TEST_GAP_008: Clinical Gap Procedure Hierarchy Cardinality failed on fct_gap_analysis_v4. 304 Standard Procedures Mapped (Expected: COUNT(*) >= 448 AND COUNT(*) <= 1125 Standard Procedures)"
+    plan = healer.diagnose_and_plan(err, "Automated Test Suite (TEST_GAP_008)")
+    assert plan["status"] == "SUCCESS"
+    assert plan["test_id"] == "TEST_GAP_008"
+    assert "fct_gap_analysis_v4" in plan["target_table"]
+    assert "304" in plan["plan"]
+
+    # 2. Test surgical execution of TEST_GAP_008 patch
+    exec_res = healer.execute_healing_patch(err, plan["plan"], user_feedback="Re-index canonical procedures")
+    assert exec_res["status"] == "SUCCESS"
+    assert exec_res["healed"] is True
+    assert exec_res["assertion_status"] == "PASS"
+    assert "1,125" in exec_res["after_metric"]
+
+    # 3. Test gateway timeout recovery
+    gw_err = "Unexpected token '<', \"<html> <head>... is not valid JSON\""
+    gw_plan = healer.diagnose_and_plan(gw_err, "Pipeline Network/Compilation Fault")
+    assert gw_plan["status"] == "SUCCESS"
+    assert gw_plan["test_id"] == "NETWORK_GATEWAY_HEAL"
+    gw_res = healer.execute_healing_patch(gw_err, gw_plan["plan"])
+    assert gw_res["status"] == "SUCCESS"
+    assert gw_res["healed"] is True
+

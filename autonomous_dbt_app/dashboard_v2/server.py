@@ -3,7 +3,7 @@ import sys
 import json
 import urllib.parse
 from typing import Any, Dict, List
-from http.server import HTTPServer, SimpleHTTPRequestHandler
+from http.server import HTTPServer, ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 import duckdb
 import pandas as pd
@@ -24,6 +24,7 @@ from autonomous_dbt_app.agents.enterprise_agent import EnterpriseAgent
 from autonomous_dbt_app.agents.refinement_agent import RefinementAgent
 from autonomous_dbt_app.core.institutional_knowledge import InstitutionalKnowledgeEngine
 from autonomous_dbt_app.core.clinical_guardrails import ClinicalGuardrailsEngine, ClinicalUOMMatrix
+from autonomous_dbt_app.core.self_healing_engine import SelfHealingEngine
 
 orchestrator = PipelineOrchestrator()
 state_mgr = StateManager()
@@ -32,6 +33,11 @@ enterprise_agent = EnterpriseAgent()
 knowledge_engine = InstitutionalKnowledgeEngine()
 refinement_agent = RefinementAgent(knowledge_engine=knowledge_engine)
 guardrails_engine = ClinicalGuardrailsEngine()
+self_healing_engine = SelfHealingEngine(
+    duckdb_path=OUTPUT_DIR / "autonomous_pipeline.duckdb",
+    state_mgr=state_mgr,
+    knowledge_engine=knowledge_engine
+)
 
 class DashboardHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
@@ -222,30 +228,8 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             user_feedback = payload.get("feedback", "").strip()
             context = payload.get("context", "pipeline_execution")
             try:
-                # Ask Sentinel Aegis / Cortex to formulate an implementation plan
-                prompt = f"""You are Sentinel Aegis (Inspector Bee Guard), the autonomous diagnostics and self-healing engine of SupplyCopia DBT.
-An error occurred during: {context}
-Error detail:
-```
-{err_msg}
-```
-User feedback / constraints (if any):
-"{user_feedback if user_feedback else 'None'}"
-
-Synthesize an actionable, high-quality, step-by-step Auto-Resolve Implementation Plan for the user. Include:
-1. Root cause summary
-2. Proposed architectural or code adjustment (e.g. SQL cast, seed update, schema alignment)
-3. Verification assertion to ensure 100% parity
-Be concise, professional, and formatted in clear Markdown bullet points."""
-                plan_text = orchestrator.cortex.complete(prompt, model="claude-3-5-sonnet")
-                if not plan_text or "MOCK_OR_OFFLINE" in plan_text:
-                    plan_text = f"**Diagnostic Assessment**:\n- **Root Cause**: Identified schema binding or test assertion divergence in execution mart.\n- **Resolution Action**: Sentinel Aegis will apply defensive type casting and synchronize the analytical mart hierarchy.\n- **Verification**: Run self-healing compiler and certify Golden Parity."
-
-                self._send_json({
-                    "status": "SUCCESS",
-                    "plan": plan_text,
-                    "target_error": err_msg
-                })
+                res = self_healing_engine.diagnose_and_plan(err_msg, context=context, user_feedback=user_feedback)
+                self._send_json(res)
             except Exception as e:
                 self._send_json({"status": "ERROR", "message": str(e)}, status=500)
         elif path == "/api/auto_resolve/execute":
@@ -253,17 +237,12 @@ Be concise, professional, and formatted in clear Markdown bullet points."""
             plan = payload.get("plan", "")
             feedback = payload.get("feedback", "")
             try:
-                # Execute self-healing recompilation
                 state_mgr.log_swarm_event("Inspector Bee Guard", "Auto-Resolve Engine", "Executing Patch", f"Applying auto-resolve patch for: {err_msg[:45]}...", "🛠️")
-                auto_db = OUTPUT_DIR / "autonomous_pipeline.duckdb"
-                folder = Path("output/staged_client_data")
-                res = orchestrator.run_full_pipeline(folder)
-                state_mgr.log_swarm_event("Inspector Bee Guard", "Auto-Resolve Engine", "Resolution Certified", "Patch executed and verified against baseline", "✅")
-                self._send_json({
-                    "status": "SUCCESS",
-                    "message": "Auto-resolve plan executed successfully. Pipeline models recompiled and certified.",
-                    "pipeline_status": res.get("status")
-                })
+                res = self_healing_engine.execute_healing_patch(err_msg, plan, user_feedback=feedback)
+                if res.get("status") == "SUCCESS":
+                    self._send_json(res)
+                else:
+                    self._send_json(res, status=500)
             except Exception as e:
                 self._send_json({"status": "ERROR", "message": str(e)}, status=500)
         elif path == "/api/feedback":
@@ -1719,6 +1698,13 @@ Provide a helpful, precise, professional, and knowledgeable answer as the Ask Th
             self._send_json({"error": "Pipeline database not compiled"}, status=404)
             return
 
+        # Annotate tests that were healed by Sentinel Aegis
+        state_data = state_mgr.load()
+        healed_ids = {h.get("test_id") for h in state_data.get("healing_history", []) if h.get("test_id")}
+        for t in tests:
+            if t["id"] in healed_ids:
+                t["healed"] = True
+
         elapsed_ms = int((time.time() - start_time) * 1000)
         passed_count = sum(1 for t in tests if t["status"] == "PASS")
 
@@ -1849,7 +1835,8 @@ Provide a helpful, precise, professional, and knowledgeable answer as the Ask Th
 
 def start_server(port: int = DASHBOARD_PORT):
     server_address = ('', port)
-    httpd = HTTPServer(server_address, DashboardHandler)
+    httpd = ThreadingHTTPServer(server_address, DashboardHandler)
+    httpd.daemon_threads = True
     print(f"\n=======================================================")
     print(f"🚀 SupplyCopia Autonomous DBT App Server running on PORT {port}")
     print(f"👉 Review Dashboard: http://localhost:{port}")

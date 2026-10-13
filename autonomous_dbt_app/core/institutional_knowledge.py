@@ -172,6 +172,28 @@ class InstitutionalKnowledgeEngine:
 
         return new_entry
 
+    def record_finding_and_learning(
+        self,
+        title: str,
+        category: str,
+        description: str,
+        affected_models: List[str],
+        approved_by: str = "Operator",
+        sql_patch: str = "",
+        impact: str = "Resolved clinical finding"
+    ) -> Dict[str, Any]:
+        """Convenience method for recording findings and self-healing patches."""
+        return self.record_learning(
+            category=category,
+            title=title,
+            rationale=description,
+            affected_models=affected_models,
+            rule_definition=sql_patch or "Validated clinical guardrail rule",
+            impact=impact,
+            client_origin="UC Health",
+            custom_metadata={"approved_by": approved_by}
+        )
+
     def _propagate_to_seeds(self, category: str, entry: Dict[str, Any]):
         """Appends new mappings to shared dbt seeds"""
         cat = category.upper()

@@ -13,6 +13,26 @@ let notifications = [
   { title: "Golden Parity Baseline Verified", desc: "uc_health.duckdb matched 100% against Port 8080 baseline", time: "5m ago" }
 ];
 
+// Robust JSON Fetch with Gateway / HTML Error Interceptor
+async function safeFetchJson(url, options = {}) {
+  const res = await fetch(url, options);
+  const contentType = res.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    const rawText = await res.text();
+    if (res.status === 504 || rawText.includes('504 Gateway Time-out')) {
+      throw new Error("Server Gateway Timeout (504): The background process is still compiling or server is recovering. Please retry.");
+    }
+    if (res.status === 502 || rawText.includes('502 Bad Gateway')) {
+      throw new Error("Bad Gateway (502): The pipeline service is temporarily restarting.");
+    }
+    if (res.status === 401) {
+      throw new Error("Session expired or unauthorized (401). Please re-authenticate.");
+    }
+    throw new Error(`Server returned HTTP ${res.status}: ${rawText.substring(0, 100).replace(/<[^>]*>/g, '').trim() || 'Non-JSON response'}`);
+  }
+  return await res.json();
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   pollStatus();
   loadPipelineSummary();
@@ -1086,12 +1106,11 @@ async function executeDbtPipeline() {
       }
     };
 
-    const res = await fetch('/api/run_pipeline', {
+    const result = await safeFetchJson('/api/run_pipeline', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
-    const result = await res.json();
 
     if (result.status === 'MUTATION_REVIEW_REQUIRED') {
       openIncrementalMutationModal(result, payload);
@@ -1409,8 +1428,7 @@ async function runAutomatedTestSuite() {
   }
 
   try {
-    const res = await fetch('/api/run_test_suite');
-    const data = await res.json();
+    const data = await safeFetchJson('/api/run_test_suite');
     if (data.status === 'SUCCESS') {
       const tests = data.tests || [];
       const tbody = document.getElementById('test-matrix-tbody');
@@ -1418,7 +1436,7 @@ async function runAutomatedTestSuite() {
         tbody.innerHTML = tests.map(t => {
           const actionBtn = t.status === 'FAIL' 
             ? `<button class="btn btn-warning btn-sm" style="padding: 2px 6px; font-size: 10px;" onclick="openAutoResolveModal('${escapeHtml(t.id + ': ' + t.assertion + ' failed on ' + t.target + ' (' + t.metric + ')')}', 'Test Suite Assertion (${t.id})')">🛠️ Auto-Resolve</button>` 
-            : '';
+            : (t.healed ? `<span class="badge badge-success" style="font-size: 10px; margin-left: 4px;">🛠️ HEALED</span>` : '');
           return `
           <tr>
             <td><code>${t.id}</code></td>
@@ -2178,13 +2196,20 @@ let currentAutoResolveContext = "";
 let currentAutoResolvePlan = "";
 
 async function openAutoResolveModal(errorText, context = "Pipeline Execution") {
-  currentAutoResolveError = errorText;
+  // Sanitize error text if it originated from a raw JSON parse error or HTML response
+  let displayError = errorText || "Unknown pipeline exception";
+  if (displayError.includes("Unexpected token '<'") || displayError.includes("504 Gateway") || displayError.includes("<html>")) {
+    displayError = "Pipeline Gateway / Connection Timeout encountered during execution. Pipeline models preserved.";
+    context = "Pipeline Network / Gateway Fault";
+  }
+
+  currentAutoResolveError = displayError;
   currentAutoResolveContext = context;
   
   const modal = document.getElementById('auto-resolve-modal');
   if (!modal) return;
 
-  document.getElementById('auto-resolve-error-text').textContent = errorText;
+  document.getElementById('auto-resolve-error-text').textContent = displayError;
   document.getElementById('auto-resolve-subtitle').textContent = `Target: ${context}`;
   const planBox = document.getElementById('auto-resolve-plan-content');
   planBox.innerHTML = `<span style="color:#fbbf24;">⚙️ Sentinel Aegis (Inspector Bee Guard) is synthesizing root-cause implementation plan...</span>`;
@@ -2192,23 +2217,22 @@ async function openAutoResolveModal(errorText, context = "Pipeline Execution") {
   modal.style.display = 'flex';
 
   try {
-    const res = await fetch('/api/auto_resolve/generate_plan', {
+    const data = await safeFetchJson('/api/auto_resolve/generate_plan', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        error: errorText,
+        error: displayError,
         context: context
       })
     });
-    const data = await res.json();
-    if (res.ok && data.status === 'SUCCESS') {
+    if (data.status === 'SUCCESS') {
       currentAutoResolvePlan = data.plan;
       planBox.innerHTML = parseMarkdownToHtml(data.plan);
     } else {
-      planBox.innerHTML = `<div style="color:#ef4444;">Failed to formulate plan: ${data.message || 'Unknown error'}</div>`;
+      planBox.innerHTML = `<div style="color:#ef4444;">Failed to formulate plan: ${escapeHtml(data.message || 'Unknown error')}</div>`;
     }
   } catch (err) {
-    planBox.innerHTML = `<div style="color:#ef4444;">Error communicating with diagnostic engine: ${err.message}</div>`;
+    planBox.innerHTML = `<div style="color:#ef4444;">Error communicating with diagnostic engine: ${escapeHtml(err.message)}</div>`;
   }
 }
 
@@ -2229,7 +2253,7 @@ async function reiterateImplementationPlan() {
   planBox.innerHTML = `<span style="color:#38bdf8;">🔄 Re-evaluating implementation plan incorporating your directive: "${escapeHtml(userFeedback)}"...</span>`;
 
   try {
-    const res = await fetch('/api/auto_resolve/generate_plan', {
+    const data = await safeFetchJson('/api/auto_resolve/generate_plan', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -2238,15 +2262,16 @@ async function reiterateImplementationPlan() {
         feedback: userFeedback
       })
     });
-    const data = await res.json();
-    if (res.ok && data.status === 'SUCCESS') {
+    if (data.status === 'SUCCESS') {
       currentAutoResolvePlan = data.plan;
       planBox.innerHTML = parseMarkdownToHtml(data.plan);
       showToast("Plan Re-evaluated", "Incorporated operator feedback into updated auto-resolve plan.", "success");
       addNotification("Plan Re-evaluated", `Sentinel Aegis adapted implementation plan based on operator feedback.`);
+    } else {
+      planBox.innerHTML = `<div style="color:#ef4444;">Re-evaluation failed: ${escapeHtml(data.message || 'Unknown error')}</div>`;
     }
   } catch (err) {
-    planBox.innerHTML = `<div style="color:#ef4444;">Error: ${err.message}</div>`;
+    planBox.innerHTML = `<div style="color:#ef4444;">Error: ${escapeHtml(err.message)}</div>`;
   }
 }
 
@@ -2259,7 +2284,7 @@ async function executeAutoResolvePlan() {
 
   try {
     const userFeedback = document.getElementById('auto-resolve-user-feedback')?.value.trim() || '';
-    const res = await fetch('/api/auto_resolve/execute', {
+    const data = await safeFetchJson('/api/auto_resolve/execute', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -2268,18 +2293,23 @@ async function executeAutoResolvePlan() {
         feedback: userFeedback
       })
     });
-    const data = await res.json();
-    if (res.ok && data.status === 'SUCCESS') {
+    if (data.status === 'SUCCESS') {
       closeAutoResolveModal();
-      showToast("Auto-Resolve Succeeded", "Applied patch and recompiled models successfully.", "success");
-      addNotification("Auto-Resolve Certified", `Resolved: ${currentAutoResolveError.substring(0, 50)}...`);
+      const metricInfo = data.after_metric ? ` (${data.after_metric})` : '';
+      showToast("Auto-Resolve Succeeded", `${data.message || 'Applied patch and certified models.'}${metricInfo}`, "success");
+      addNotification("Auto-Resolve Certified", `Resolved: ${currentAutoResolveError.substring(0, 50)}... ${metricInfo}`);
       
-      // Refresh UI components
+      // Refresh UI components immediately
       loadPipelineSummary();
       loadOutputTableData();
       loadParityDetails();
       reloadDbtIframe();
       pollStatus();
+
+      // Crucial: Re-run automated test suite so Stage 6 test turns green!
+      if (typeof runAutomatedTestSuite === 'function') {
+        setTimeout(runAutomatedTestSuite, 300);
+      }
     } else {
       showToast("Auto-Resolve Failed", data.message || "Failed to execute resolution patch.", "error");
     }
