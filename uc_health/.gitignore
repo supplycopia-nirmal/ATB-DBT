@@ -1,5 +1,8 @@
 
-target/
+target/compiled/
+target/run/
+target/*.msgpack
+target/*.gpickle
 dbt_packages/
 logs/
 .env

@@ -35,7 +35,7 @@ EXPOSE 8081
 
 # Container Healthcheck
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-  CMD curl -f http://localhost:8081/ || exit 1
+  CMD curl -f http://localhost:8081/health || exit 1
 
 # Launch Studio Daemon
 CMD ["python3", "-m", "autonomous_dbt_app.dashboard_v2.server"]

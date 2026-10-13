@@ -926,8 +926,8 @@ async function confirmGate1AndProceed() {
 
   try {
     await fetch('/api/confirm_joins', { method: 'POST' });
-    switchStage('lineage');
     await executeDbtPipeline();
+    switchStage('lineage');
   } catch (err) {
     showToast("Error", err.message, "error");
   }
@@ -993,7 +993,6 @@ async function confirmJoinsAndProceed() {
     try {
       showToast("Topology Auto-Locked", "Synthesizing layered DBT models...", "info");
       await fetch('/api/confirm_joins', { method: 'POST' });
-      switchStage('lineage');
       await executeDbtPipeline();
     } catch (err) {
       showToast("Error", err.message, "error");
@@ -1024,8 +1023,8 @@ async function confirmJoinsAndProceed() {
         
         showToast("Swarm Dispatched", "DBT Compilation executing across Staging, Intermediate, & Marts.", "success");
         addNotification("HITL Checkpoint Approved", "Operator approved join rules and initiated model generation");
-        switchStage('lineage');
         await executeDbtPipeline();
+        switchStage('lineage');
       } catch (err) {
         showToast("Error", err.message, "error");
       } finally {
@@ -1106,18 +1105,43 @@ async function executeDbtPipeline() {
       }
     };
 
-    const result = await safeFetchJson('/api/run_pipeline', {
+    const initResult = await safeFetchJson('/api/run_pipeline', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
 
-    if (result.status === 'MUTATION_REVIEW_REQUIRED') {
-      openIncrementalMutationModal(result, payload);
+    if (initResult.status === 'MUTATION_REVIEW_REQUIRED') {
+      openIncrementalMutationModal(initResult, payload);
       return;
     }
 
-    if (!res.ok || result.status === 'ERROR' || result.status === 'FAILED') {
+    let result = initResult;
+    if (initResult.status === 'PROCESSING') {
+      let pollAttempts = 0;
+      const maxAttempts = 150;
+      while (pollAttempts < maxAttempts) {
+        await new Promise(r => setTimeout(r, 1500));
+        pollAttempts++;
+        try {
+          const prog = await safeFetchJson('/api/compilation_progress');
+          if (btn) {
+            btn.textContent = `⚙️ ${prog.step || 'Compiling...'} (${prog.progress || 0}%)`;
+          }
+          if (prog.status === 'SUCCESS') {
+            result = prog.result || { status: 'SUCCESS' };
+            break;
+          } else if (prog.status === 'ERROR') {
+            result = { status: 'ERROR', message: prog.error || "Model compilation error" };
+            break;
+          }
+        } catch (e) {
+          if (pollAttempts >= maxAttempts) throw e;
+        }
+      }
+    }
+
+    if (result.status === 'ERROR' || result.status === 'FAILED') {
       let errMsg = result.message || result.manifest?.error_message;
       if (!errMsg && result.execution_report?.failures?.length) {
         errMsg = result.execution_report.failures.map(f => `${f.model}: ${f.error}`).join('; ');
