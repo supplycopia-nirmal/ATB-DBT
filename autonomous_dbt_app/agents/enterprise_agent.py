@@ -6,21 +6,24 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional
 import duckdb
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-OUTPUT_DIR = PROJECT_ROOT / "output"
+from autonomous_dbt_app.config import OUTPUT_DIR, ROOT_DIR as PROJECT_ROOT, BASE_DATA_DIR
+from autonomous_dbt_app.core.record_drift_engine import RecordDriftEngine
+from autonomous_dbt_app.core.client_file_tracker import ClientFileTracker, ENTITY_CANONICAL_FILENAMES
 
 class EnterpriseAgent:
     """
     Enterprise Capabilities Suite for Autonomous DBT Pipeline Studio:
     1. Automated Schema Drift Detection
-    2. Semantic Medical Code Normalizer
-    3. Data Quality SLA & Anomaly Detection
-    4. Git CI/CD Synchronization & Branch Automation
-    5. Snowflake Row-Level Security (RLS) Generator
-    6. LLM Token & Cost Observability Tracker
+    2. Record (Row) Level Drift Observability
+    3. Semantic Medical Code Normalizer
+    4. Data Quality SLA & Anomaly Detection
+    5. Git CI/CD Synchronization & Branch Automation
+    6. Snowflake Row-Level Security (RLS) Generator
+    7. LLM Token & Cost Observability Tracker
     """
     def __init__(self):
         self.db_path = OUTPUT_DIR / "autonomous_pipeline.duckdb"
+        self.record_drift_engine = RecordDriftEngine(self.db_path)
 
     def detect_schema_drift(self, client_id: str = "CL_UCH_001") -> Dict[str, Any]:
         """Compares current staged client datasets against SupplyCopia canonical baseline."""
@@ -240,3 +243,96 @@ ADD ROW ACCESS POLICY tenant_isolation_policy ON (client_id);
             ],
             "cache_hit_rate_pct": 34.5
         }
+
+    def detect_record_drift(self, client_id: str = "CL_UCH_001", entity_type: str = "item_master") -> Dict[str, Any]:
+        """Runs record-level churn, null-rate, and distribution drift analysis."""
+        staged_dir = OUTPUT_DIR / "staged_client_data"
+        baseline_dir = BASE_DATA_DIR
+        canonical_filename = ENTITY_CANONICAL_FILENAMES.get(entity_type, f"UHC_{entity_type}.csv")
+
+        curr_file = staged_dir / canonical_filename
+        base_file = baseline_dir / canonical_filename
+
+        if not curr_file.exists():
+            matches = list(staged_dir.glob(f"*{entity_type[:3]}*.csv"))
+            curr_file = matches[0] if matches else (baseline_dir / canonical_filename)
+
+        if not base_file.exists():
+            base_file = curr_file
+
+        if not curr_file.exists() and not base_file.exists():
+            return {
+                "status": "ERROR",
+                "message": f"No staged or baseline datasets found for entity: {entity_type}",
+                "entity_type": entity_type
+            }
+
+        return self.record_drift_engine.analyze_record_drift(
+            baseline_file=base_file,
+            current_file=curr_file,
+            entity_type=entity_type
+        )
+
+    def export_record_drift_excel(self, client_id: str = "CL_UCH_001", entity_type: str = "item_master"):
+        """Generates a professional 5-sheet Excel workbook detailing record drift."""
+        import io
+        import pandas as pd
+        drift = self.detect_record_drift(client_id=client_id, entity_type=entity_type)
+
+        buf = io.BytesIO()
+        with pd.ExcelWriter(buf, engine='openpyxl') as writer:
+            # 1. Summary Sheet
+            vol = drift.get("volume_drift", {})
+            churn = drift.get("record_churn", {})
+            summary_data = [
+                {"Metric": "Client Identifier", "Value": client_id},
+                {"Metric": "Target Entity Type", "Value": entity_type},
+                {"Metric": "Analysis Timestamp", "Value": datetime.now().isoformat()},
+                {"Metric": "Baseline Row Count", "Value": vol.get("baseline_rows", 0)},
+                {"Metric": "Current Row Count", "Value": vol.get("current_rows", 0)},
+                {"Metric": "Row Delta Count", "Value": vol.get("row_delta", 0)},
+                {"Metric": "Volume Delta %", "Value": f"{vol.get('row_delta_pct', 0)}%"},
+                {"Metric": "Volume Drift Status", "Value": vol.get("status", "STABLE")},
+                {"Metric": "Net-New Records Added", "Value": f"{churn.get('added_records', 0)} ({churn.get('added_pct', 0)}%)"},
+                {"Metric": "Existing Records Modified", "Value": f"{churn.get('modified_records', 0)} ({churn.get('modified_pct', 0)}%)"},
+                {"Metric": "Dropped / Missing Records", "Value": f"{churn.get('dropped_records', 0)} ({churn.get('dropped_pct', 0)}%)"},
+                {"Metric": "Unchanged Records", "Value": f"{churn.get('unchanged_records', 0)} ({churn.get('unchanged_pct', 0)}%)"}
+            ]
+            pd.DataFrame(summary_data).to_excel(writer, sheet_name="Executive Churn Summary", index=False)
+
+            # 2. Field Shift Frequencies
+            field_shifts = drift.get("field_modification_frequencies", [])
+            pd.DataFrame(field_shifts if field_shifts else [{"Notice": "No field shifts detected"}]).to_excel(
+                writer, sheet_name="Field Modifications", index=False
+            )
+
+            # 3. Null Rate Shifts
+            null_shifts = drift.get("null_rate_shifts", [])
+            pd.DataFrame(null_shifts if null_shifts else [{"Notice": "Null rates stable"}]).to_excel(
+                writer, sheet_name="Null Rate Drift", index=False
+            )
+
+            # 4. Numerical Distribution Drift
+            dist_shifts = drift.get("distribution_shifts", [])
+            pd.DataFrame(dist_shifts if dist_shifts else [{"Notice": "No numeric distribution shifts"}]).to_excel(
+                writer, sheet_name="Distribution Shifts", index=False
+            )
+
+            # 5. Sample Diffs
+            diffs = drift.get("sample_diffs", [])
+            flattened_diffs = []
+            for d in diffs:
+                k = d.get("record_key")
+                for ch in d.get("changes", []):
+                    flattened_diffs.append({
+                        "Record Key": k,
+                        "Field Changed": ch.get("field"),
+                        "Baseline Value": ch.get("baseline_val"),
+                        "Current Value": ch.get("current_val")
+                    })
+            pd.DataFrame(flattened_diffs if flattened_diffs else [{"Notice": "No sample differences"}]).to_excel(
+                writer, sheet_name="Sample Row Diffs", index=False
+            )
+
+        return buf.getvalue()
+

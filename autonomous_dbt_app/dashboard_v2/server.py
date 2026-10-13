@@ -25,6 +25,7 @@ from autonomous_dbt_app.agents.refinement_agent import RefinementAgent
 from autonomous_dbt_app.core.institutional_knowledge import InstitutionalKnowledgeEngine
 from autonomous_dbt_app.core.clinical_guardrails import ClinicalGuardrailsEngine, ClinicalUOMMatrix
 from autonomous_dbt_app.core.self_healing_engine import SelfHealingEngine
+from autonomous_dbt_app.core.client_file_tracker import ClientFileTracker, EntityMergeEngine, ENTITY_NATURAL_KEYS
 
 orchestrator = PipelineOrchestrator()
 state_mgr = StateManager()
@@ -38,6 +39,8 @@ self_healing_engine = SelfHealingEngine(
     state_mgr=state_mgr,
     knowledge_engine=knowledge_engine
 )
+client_file_tracker = ClientFileTracker()
+entity_merge_engine = EntityMergeEngine(tracker=client_file_tracker)
 
 import threading
 
@@ -172,6 +175,19 @@ def _ensure_database_and_staged_data():
         con.close()
     except Exception as e:
         print(f"[Init] Notice initializing DuckDB: {e}")
+
+    # 3. Defensive Auto-seed of Client File Tracker catalog if empty
+    try:
+        existing_catalog = client_file_tracker.list_files(client_id="CL_UCH_001")
+        if not existing_catalog:
+            for csv_file in sorted(staged_dir.glob("*.csv")):
+                client_file_tracker.register_file(
+                    client_id="CL_UCH_001",
+                    file_path=csv_file,
+                    notes="Baseline file ingestion"
+                )
+    except Exception as e:
+        print(f"[Init] Notice seeding client tracker: {e}")
 
 _ensure_database_and_staged_data()
 
@@ -310,13 +326,21 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             self._send_json(checkpoint_mgr.list_checkpoints(query))
         elif path == "/api/enterprise/schema_drift":
             self._send_json(enterprise_agent.detect_schema_drift())
+        elif path == "/api/enterprise/record_drift":
+            client_id = params.get("client_id", ["CL_UCH_001"])[0]
+            entity = params.get("entity", [None])[0]
+            self._send_json(enterprise_agent.detect_record_drift(client_id=client_id, entity_type=entity))
+        elif path == "/api/client_tracker/files":
+            client_id = params.get("client_id", ["CL_UCH_001"])[0]
+            entity_type = params.get("entity_type", [None])[0]
+            self._send_json({"status": "SUCCESS", "client_id": client_id, "files": client_file_tracker.list_files(client_id=client_id, entity_type=entity_type)})
         elif path == "/api/enterprise/sla_anomalies":
             self._send_json(enterprise_agent.run_sla_anomaly_detection())
         elif path == "/api/enterprise/observability":
             self._send_json(enterprise_agent.get_observability_metrics())
         elif path == "/api/enterprise/export_excel":
             dataset_type = params.get("dataset", ["drift"])[0]
-            self._handle_enterprise_export_excel(dataset_type)
+            self._handle_enterprise_export_excel(dataset_type, params=params)
         elif path == "/api/run_test_suite":
             self._handle_run_test_suite()
         elif path == "/api/cortex/procedure_status":
@@ -521,6 +545,10 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             self._handle_refinement_reiterate(payload)
         elif path == "/api/refinement/execute":
             self._handle_refinement_execute(payload)
+        elif path == "/api/client_tracker/register":
+            self._handle_client_tracker_register(payload)
+        elif path == "/api/client_tracker/merge":
+            self._handle_client_tracker_merge(payload)
         else:
             self._send_json({"error": "Endpoint not found"}, status=404)
 
@@ -584,6 +612,81 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 "⚡"
             )
             self._send_json(result)
+        except Exception as e:
+            self._send_json({"status": "ERROR", "message": str(e)}, status=500)
+
+    def _handle_client_tracker_register(self, payload: Dict[str, Any]):
+        client_id = payload.get("client_id", "CL_UCH_001")
+        file_path_str = payload.get("file_path", "")
+        filename = payload.get("filename", "")
+        content_b64 = payload.get("content_base64", "")
+        notes = payload.get("notes", "Ingested via Studio Portal")
+        entity_type = payload.get("entity_type")
+
+        staged_dir = OUTPUT_DIR / "staged_client_data"
+        staged_dir.mkdir(parents=True, exist_ok=True)
+
+        target_path = None
+        if content_b64 and filename:
+            try:
+                data_bytes = base64.b64decode(content_b64)
+                target_path = staged_dir / filename
+                with open(target_path, "wb") as f:
+                    f.write(data_bytes)
+            except Exception as e:
+                self._send_json({"status": "ERROR", "message": f"Failed to decode uploaded file: {str(e)}"}, status=400)
+                return
+        elif file_path_str:
+            target_path = Path(file_path_str)
+            if not target_path.is_absolute():
+                target_path = staged_dir / file_path_str
+
+        if not target_path or not target_path.exists():
+            self._send_json({"status": "ERROR", "message": f"Target file not found: {file_path_str or filename}"}, status=400)
+            return
+
+        try:
+            entry = client_file_tracker.register_file(
+                client_id=client_id,
+                file_path=target_path,
+                entity_type=entity_type,
+                notes=notes
+            )
+            state_mgr.log_swarm_event(
+                "Scout Bee Buzz", "Client File Tracker", "File Registered In Catalog",
+                f"Registered {entry['filename']} (v{entry['version']}, {entry['entity_type']}) for tenant {client_id}.",
+                "🗂️"
+            )
+            self._send_json({"status": "SUCCESS", "entry": entry})
+        except Exception as e:
+            self._send_json({"status": "ERROR", "message": str(e)}, status=500)
+
+    def _handle_client_tracker_merge(self, payload: Dict[str, Any]):
+        client_id = payload.get("client_id", "CL_UCH_001")
+        entity_type = payload.get("entity_type")
+        merge_strategy = payload.get("merge_strategy", "latest_wins")
+        primary_keys = payload.get("primary_keys")
+
+        if not entity_type:
+            self._send_json({"status": "ERROR", "message": "entity_type is required for smart merge"}, status=400)
+            return
+
+        try:
+            summary = entity_merge_engine.merge_entity(
+                client_id=client_id,
+                entity_type=entity_type,
+                merge_strategy=merge_strategy,
+                primary_keys=primary_keys
+            )
+            if summary.get("status") == "SUCCESS":
+                state_mgr.log_swarm_event(
+                    "Queen Bee Orla", "Smart Merge Engine", "Files Merged & Deduplicated",
+                    f"Consolidated {summary.get('files_merged_count')} files into single {entity_type} table. Final rows: {summary.get('final_merged_rows')} (Deduplicated: {summary.get('duplicates_removed')}).",
+                    "⚡"
+                )
+                self._send_json(summary)
+            else:
+                self._send_json(summary, status=400)
         except Exception as e:
             self._send_json({"status": "ERROR", "message": str(e)}, status=500)
 
@@ -1518,11 +1621,26 @@ Provide a helpful, precise, professional, and knowledgeable answer as the Ask Th
         }
         self._send_json(lineage)
 
-    def _handle_enterprise_export_excel(self, dataset_type: str):
+    def _handle_enterprise_export_excel(self, dataset_type: str, params: dict = None):
         import io
         import pandas as pd
         import duckdb
+        if params is None:
+            params = {}
         try:
+            if dataset_type == "record_drift":
+                client_id = params.get("client_id", ["CL_UCH_001"])[0] if isinstance(params.get("client_id"), list) else params.get("client_id", "CL_UCH_001")
+                entity = params.get("entity", [None])[0] if isinstance(params.get("entity"), list) else params.get("entity")
+                excel_bytes = enterprise_agent.export_record_drift_excel(client_id=client_id, entity_type=entity)
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+                self.send_header('Content-Disposition', f'attachment; filename="supplycopia_record_drift_{entity or "all"}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.xlsx"')
+                self.send_header('Content-Length', str(len(excel_bytes)))
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(excel_bytes)
+                return
+
             buf = io.BytesIO()
             filename = f"supplycopia_{dataset_type}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
             auto_db = OUTPUT_DIR / "autonomous_pipeline.duckdb"

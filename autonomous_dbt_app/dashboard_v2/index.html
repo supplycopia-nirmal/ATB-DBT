@@ -245,6 +245,25 @@
             <div id="ingest-status-msg" style="margin-top: 15px; font-weight: 500;"></div>
           </div>
         </div>
+
+        <!-- Client Ingestion Catalog & Smart Entity Merge Center -->
+        <div class="card" style="margin-top: 20px;">
+          <div class="card-header flex-header" style="display:flex; justify-content:space-between; align-items:center;">
+            <div>
+              <h3 style="margin:0 0 4px 0;">Client Ingestion Catalog &amp; Smart Entity Merge Center</h3>
+              <span class="card-hint">Maintains a persistent client audit trail of all historical and incoming files. Merge revisions, addenda, or delta feeds with automated primary-key de-duplication.</span>
+            </div>
+            <div style="display:flex; gap:10px; align-items:center;">
+              <button class="btn btn-secondary btn-sm" onclick="openRegisterFileModal()">➕ Register Incoming File</button>
+              <button class="btn btn-primary btn-sm" onclick="openSmartMergeModal()">⚡ Smart Merge &amp; Deduplicate</button>
+            </div>
+          </div>
+          <div class="card-body">
+            <div id="client-tracker-table-container">
+              <div class="loading">Loading client ingestion catalog...</div>
+            </div>
+          </div>
+        </div>
       </section>
 
       <!-- Stage 2: Raw Data Profiling -->
@@ -786,6 +805,7 @@
       <div class="modal-body">
         <div class="tab-pills" style="margin-bottom: 16px;">
           <button class="tab-pill active" id="tab-ent-drift" onclick="switchEnterpriseTab('drift')">🧬 Schema Drift</button>
+          <button class="tab-pill" id="tab-ent-record_drift" onclick="switchEnterpriseTab('record_drift')">📈 Record &amp; Row Drift</button>
           <button class="tab-pill" id="tab-ent-normalizer" onclick="switchEnterpriseTab('normalizer')">🏥 Medical Normalizer</button>
           <button class="tab-pill" id="tab-ent-sla" onclick="switchEnterpriseTab('sla')">🛡️ SLA &amp; Anomaly Detection</button>
           <button class="tab-pill" id="tab-ent-git" onclick="switchEnterpriseTab('git')">🔄 Git CI/CD Export</button>
@@ -801,6 +821,25 @@
           </div>
           <p class="section-desc">Detects additions, removals, and datatype shifts between incoming client batches and canonical SupplyCopia models.</p>
           <div id="ent-drift-content" class="loading">Analyzing schema drift against baseline catalog...</div>
+        </div>
+
+        <!-- Record & Row Drift Panel -->
+        <div id="ent-pane-record_drift" class="ent-pane" style="display:none;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px;">
+            <div style="display:flex; align-items:center; gap:12px;">
+              <h4 style="margin:0;">Record &amp; Row-Level Drift Observability:</h4>
+              <select id="select-drift-entity" class="form-select-sm" onchange="loadRecordDriftData()" style="padding:4px 10px; border-radius:6px; background:#1e293b; color:#fff; border:1px solid #334155; font-size:12px;">
+                <option value="item_master" selected>Item Master</option>
+                <option value="contracts">Contracts</option>
+                <option value="purchase_orders">Purchase Orders</option>
+                <option value="invoices">Invoices</option>
+                <option value="consumption">Consumption</option>
+              </select>
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="exportRecordDriftExcel()">📥 Download 5-Sheet Excel</button>
+          </div>
+          <p class="section-desc">Vectorized record-level drift engine tracking volume cardinality deltas, churn matrix (Added / Modified / Dropped / Unchanged), field modification rates, null-rate spikes, and statistical numerical distribution shifts.</p>
+          <div id="ent-record-drift-content" class="loading">Analyzing row-level drift against baseline...</div>
         </div>
 
         <!-- Normalizer Panel -->
@@ -1093,6 +1132,102 @@
       <div class="lightbox-footer" style="border-top: 1px solid var(--border-color); padding-top: 12px; display: flex; justify-content: space-between; align-items: center;">
         <button class="btn btn-secondary" onclick="closeIncrementalMutationModal()">Cancel</button>
         <button class="btn btn-primary" onclick="confirmIncrementalMutationAction()">Apply Mode &amp; Merge Delta</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Smart Merge & Deduplicate Modal -->
+  <div id="modal-smart-merge" class="lightbox-overlay" style="display: none;" onclick="if(event.target===this)closeSmartMergeModal()">
+    <div class="lightbox-dialog" style="max-width: 820px; width: 95%;">
+      <div class="lightbox-header" style="border-bottom: 1px solid var(--border-color); padding-bottom: 12px;">
+        <span class="lightbox-icon">⚡</span>
+        <div>
+          <h3 style="margin: 0; color: #38bdf8;">Smart Entity Merge &amp; De-duplication Engine</h3>
+          <span style="font-size: 12px; color: var(--text-muted);">Consolidate multi-version client datasets (Item Master, Contracts, POs) with configurable deduplication</span>
+        </div>
+      </div>
+      <div class="lightbox-body" style="padding: 16px 0;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+          <div>
+            <label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 6px;">Target Entity to Merge:</label>
+            <select id="merge-entity-select" class="form-select" onchange="onMergeEntitySelected()" style="width: 100%; padding: 8px 12px; border-radius: 6px; background: #0f172a; color: #fff; border: 1px solid var(--border-color);">
+              <option value="item_master" selected>Item Master (item_master)</option>
+              <option value="contracts">Contracts (contracts)</option>
+              <option value="purchase_orders">Purchase Orders (purchase_orders)</option>
+              <option value="invoices">Invoices (invoices)</option>
+              <option value="consumption">Consumption (consumption)</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 6px;">Deduplication / Merge Strategy:</label>
+            <select id="merge-strategy-select" class="form-select" style="width: 100%; padding: 8px 12px; border-radius: 6px; background: #0f172a; color: #fff; border: 1px solid var(--border-color);">
+              <option value="latest_wins" selected>Latest Wins (SCD Type 1 on Natural Keys - Recommended)</option>
+              <option value="union_distinct">Union Distinct (Exact Full-Record Deduplication)</option>
+              <option value="additive_append">Additive Append (Preserve all rows)</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="margin-bottom: 16px;">
+          <label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 6px;">Active Ingestion Files for this Entity:</label>
+          <div id="merge-files-preview-list" style="max-height: 140px; overflow-y: auto; background: #0b1120; border-radius: 6px; padding: 10px; border: 1px solid var(--border-color); font-size: 12px;">
+            <div class="loading">Loading tracked files...</div>
+          </div>
+        </div>
+
+        <div style="margin-bottom: 16px;">
+          <label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 6px;">Natural Primary Keys (Comma Separated):</label>
+          <input type="text" id="merge-primary-keys-input" value="item_id" placeholder="e.g. item_id, contract_number" style="width: 100%; padding: 8px 12px; border-radius: 6px; background: #0f172a; color: #fff; border: 1px solid var(--border-color); font-family: monospace;">
+          <span style="font-size: 11px; color: var(--text-muted);">Auto-detected default natural keys will be used for deduplication.</span>
+        </div>
+
+        <div id="merge-result-box" style="display:none; background: rgba(34, 197, 94, 0.1); border: 1px solid #22c55e; border-radius: 6px; padding: 12px; font-size: 12px;">
+        </div>
+      </div>
+      <div class="lightbox-footer" style="border-top: 1px solid var(--border-color); padding-top: 12px; display: flex; justify-content: space-between; align-items: center;">
+        <button class="btn btn-secondary" onclick="closeSmartMergeModal()">Cancel</button>
+        <button id="btn-execute-merge" class="btn btn-primary" onclick="executeSmartMerge()">⚡ Execute Smart Merge &amp; Deduplicate</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Register New Incoming File Modal -->
+  <div id="modal-register-file" class="lightbox-overlay" style="display: none;" onclick="if(event.target===this)closeRegisterFileModal()">
+    <div class="lightbox-dialog" style="max-width: 620px; width: 95%;">
+      <div class="lightbox-header" style="border-bottom: 1px solid var(--border-color); padding-bottom: 12px;">
+        <span class="lightbox-icon">➕</span>
+        <div>
+          <h3 style="margin: 0; color: #38bdf8;">Register Incoming Client Dataset</h3>
+          <span style="font-size: 12px; color: var(--text-muted);">Audit-track incoming updates, addenda, or newer revision files in client catalog</span>
+        </div>
+      </div>
+      <div class="lightbox-body" style="padding: 16px 0;">
+        <div style="margin-bottom: 14px;">
+          <label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 6px;">Canonical Entity Type:</label>
+          <select id="reg-entity-select" class="form-select" style="width: 100%; padding: 8px 12px; border-radius: 6px; background: #0f172a; color: #fff; border: 1px solid var(--border-color);">
+            <option value="item_master" selected>Item Master (item_master)</option>
+            <option value="contracts">Contracts (contracts)</option>
+            <option value="purchase_orders">Purchase Orders (purchase_orders)</option>
+            <option value="invoices">Invoices (invoices)</option>
+            <option value="consumption">Consumption (consumption)</option>
+          </select>
+        </div>
+        <div style="margin-bottom: 14px;">
+          <label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 6px;">Upload File (CSV):</label>
+          <input type="file" id="reg-file-upload" accept=".csv" style="width: 100%; padding: 8px; border-radius: 6px; background: #0f172a; color: #fff; border: 1px solid var(--border-color); font-size: 12px;">
+        </div>
+        <div style="margin-bottom: 14px;">
+          <label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 6px;">Or Server File Path:</label>
+          <input type="text" id="reg-file-path" placeholder="e.g. UHC_CON_Addendum_2026.csv or /path/to/file.csv" style="width: 100%; padding: 8px 12px; border-radius: 6px; background: #0f172a; color: #fff; border: 1px solid var(--border-color); font-size: 12px;">
+        </div>
+        <div style="margin-bottom: 14px;">
+          <label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 6px;">Ingestion Audit Notes:</label>
+          <input type="text" id="reg-notes" value="Incoming Q4 Addendum" placeholder="e.g. Revised contract pricing schedule" style="width: 100%; padding: 8px 12px; border-radius: 6px; background: #0f172a; color: #fff; border: 1px solid var(--border-color); font-size: 12px;">
+        </div>
+      </div>
+      <div class="lightbox-footer" style="border-top: 1px solid var(--border-color); padding-top: 12px; display: flex; justify-content: space-between; align-items: center;">
+        <button class="btn btn-secondary" onclick="closeRegisterFileModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="submitRegisterFile()">Register in Catalog</button>
       </div>
     </div>
   </div>

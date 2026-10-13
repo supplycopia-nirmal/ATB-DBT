@@ -44,6 +44,7 @@ document.addEventListener('DOMContentLoaded', () => {
   loadSavedPipelines();
   renderNotifications();
   handleAutonomyModeChange();
+  loadClientFileTracker();
 
   // Poll status and swarm stream
   setInterval(pollStatus, 4000);
@@ -62,6 +63,7 @@ function switchStage(stageId) {
   const targetSec = document.getElementById(`stage-${stageId}`);
   if (targetSec) targetSec.classList.add('active');
 
+  if (stageId === 'ingest') loadClientFileTracker();
   if (stageId === 'profile') loadRawProfile();
   if (stageId === 'joins') loadJoins();
   if (stageId === 'explorer') loadOutputTableData();
@@ -1629,6 +1631,10 @@ function switchEnterpriseTab(tab) {
 }
 
 async function loadEnterpriseData(tab) {
+  if (tab === 'record_drift') {
+    await loadRecordDriftData();
+    return;
+  }
   if (tab === 'drift') {
     const res = await fetch('/api/enterprise/schema_drift');
     const data = await res.json();
@@ -2938,4 +2944,437 @@ function escapeHtml(text) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
 }
+
+/* ==============================================================================
+   Client File Ingestion Tracker & Smart Entity Merge Engine
+   ============================================================================== */
+
+const ENTITY_DEFAULT_PKS = {
+  item_master: 'item_id',
+  contracts: 'contract_number, item_id',
+  purchase_orders: 'po_number, po_line_no',
+  invoices: 'invoice_number, po_line_no',
+  consumption: 'log_id'
+};
+
+async function loadClientFileTracker() {
+  const container = document.getElementById('client-tracker-table-container');
+  if (!container) return;
+  try {
+    const res = await fetch('/api/client_tracker/files?client_id=CL_UCH_001');
+    const data = await res.json();
+    const files = data.files || [];
+
+    if (files.length === 0) {
+      container.innerHTML = `
+        <div style="text-align:center; padding:24px; color:var(--text-muted);">
+          <div style="font-size:24px; margin-bottom:8px;">📭</div>
+          <div>No client files registered yet. Click <strong>"➕ Register Incoming File"</strong> to add baseline or new files.</div>
+        </div>
+      `;
+      return;
+    }
+
+    const totalRows = files.reduce((acc, f) => acc + (f.row_count || 0), 0);
+    const uniqueEntities = [...new Set(files.map(f => f.entity_type))];
+    const activeCount = files.filter(f => f.status === 'ACTIVE').length;
+
+    container.innerHTML = `
+      <div style="display:flex; gap:16px; margin-bottom:14px; flex-wrap:wrap;">
+        <div class="kpi-card" style="padding:10px 14px; min-width:140px;">
+          <div class="kpi-label">Tracked Files</div>
+          <div class="kpi-value highlight">${files.length}</div>
+        </div>
+        <div class="kpi-card" style="padding:10px 14px; min-width:140px;">
+          <div class="kpi-label">Active Entities</div>
+          <div class="kpi-value success">${uniqueEntities.length}</div>
+        </div>
+        <div class="kpi-card" style="padding:10px 14px; min-width:140px;">
+          <div class="kpi-label">Active Datasets</div>
+          <div class="kpi-value">${activeCount}</div>
+        </div>
+        <div class="kpi-card" style="padding:10px 14px; min-width:140px;">
+          <div class="kpi-label">Catalog Total Rows</div>
+          <div class="kpi-value">${totalRows.toLocaleString()}</div>
+        </div>
+      </div>
+      <div class="table-container" style="max-height:300px; overflow-y:auto;">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>File Name</th>
+              <th>Entity</th>
+              <th>Ver</th>
+              <th>Rows</th>
+              <th>SHA-256 Hash</th>
+              <th>Registered At</th>
+              <th>Status</th>
+              <th>Notes / Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${files.map(f => {
+              const statusBadge = f.status === 'ACTIVE'
+                ? '<span class="badge badge-success">ACTIVE</span>'
+                : f.status === 'MERGED_CONSOLIDATED'
+                ? '<span class="badge badge-primary">CONSOLIDATED</span>'
+                : '<span class="badge badge-warning">SUPERSEDED</span>';
+              const entityBadge = `<span class="badge badge-outline" style="border:1px solid #38bdf8; color:#38bdf8;">${escapeHtml(f.entity_type)}</span>`;
+              const hashShort = (f.file_hash || '').substring(0, 10) + '...';
+              return `
+                <tr>
+                  <td><strong>${escapeHtml(f.filename)}</strong></td>
+                  <td>${entityBadge}</td>
+                  <td><span class="badge badge-primary">v${f.version || 1}</span></td>
+                  <td>${(f.row_count || 0).toLocaleString()}</td>
+                  <td title="${escapeHtml(f.file_hash || '')}"><code>${hashShort}</code></td>
+                  <td style="font-size:11px; color:var(--text-muted);">${(f.registered_at || '').substring(0, 19).replace('T', ' ')}</td>
+                  <td>${statusBadge}</td>
+                  <td style="font-size:11px; color:var(--text-muted);">${escapeHtml(f.notes || '-')}</td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  } catch (err) {
+    container.innerHTML = `<div style="color:#ef4444; padding:12px;">Failed to load file catalog: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+async function openSmartMergeModal() {
+  const modal = document.getElementById('modal-smart-merge');
+  if (!modal) return;
+  modal.style.display = 'flex';
+  const resBox = document.getElementById('merge-result-box');
+  if (resBox) resBox.style.display = 'none';
+  await onMergeEntitySelected();
+}
+
+function closeSmartMergeModal() {
+  const modal = document.getElementById('modal-smart-merge');
+  if (modal) modal.style.display = 'none';
+}
+
+async function onMergeEntitySelected() {
+  const entitySelect = document.getElementById('merge-entity-select');
+  if (!entitySelect) return;
+  const entity = entitySelect.value;
+  const pkInput = document.getElementById('merge-primary-keys-input');
+  if (pkInput && ENTITY_DEFAULT_PKS[entity]) {
+    pkInput.value = ENTITY_DEFAULT_PKS[entity];
+  }
+  const previewList = document.getElementById('merge-files-preview-list');
+  if (!previewList) return;
+  previewList.innerHTML = '<div class="loading">Loading tracked files for entity...</div>';
+  try {
+    const res = await fetch(`/api/client_tracker/files?client_id=CL_UCH_001&entity_type=${entity}`);
+    const data = await res.json();
+    const files = data.files || [];
+    if (files.length === 0) {
+      previewList.innerHTML = `<div style="color:var(--text-muted);">No tracked files found for ${entity}. Register files first.</div>`;
+    } else {
+      previewList.innerHTML = `
+        <div style="font-weight:600; margin-bottom:6px; color:#38bdf8;">Found ${files.length} registered file(s):</div>
+        <ul style="margin:0; padding-left:18px;">
+          ${files.map(f => `
+            <li>
+              <strong>${escapeHtml(f.filename)}</strong> (v${f.version}) — ${(f.row_count || 0).toLocaleString()} rows
+              <span class="badge ${f.status === 'ACTIVE' ? 'badge-success' : 'badge-warning'}" style="font-size:10px; padding:1px 5px; margin-left:6px;">${f.status}</span>
+            </li>
+          `).join('')}
+        </ul>
+      `;
+    }
+  } catch (err) {
+    previewList.innerHTML = `<div style="color:#ef4444;">Error: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+async function executeSmartMerge() {
+  const entity = document.getElementById('merge-entity-select').value;
+  const strategy = document.getElementById('merge-strategy-select').value;
+  const pksRaw = document.getElementById('merge-primary-keys-input').value;
+  const primaryKeys = pksRaw.split(',').map(s => s.trim()).filter(Boolean);
+  const btn = document.getElementById('btn-execute-merge');
+  const resBox = document.getElementById('merge-result-box');
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Merging & Deduplicating...';
+  resBox.style.display = 'none';
+
+  try {
+    const res = await fetch('/api/client_tracker/merge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        client_id: 'CL_UCH_001',
+        entity_type: entity,
+        merge_strategy: strategy,
+        primary_keys: primaryKeys
+      })
+    });
+    const data = await res.json();
+    if (res.ok && data.status === 'SUCCESS') {
+      resBox.style.display = 'block';
+      resBox.style.background = 'rgba(34, 197, 94, 0.1)';
+      resBox.style.borderColor = '#22c55e';
+      resBox.innerHTML = `
+        <div style="font-weight:bold; color:#22c55e; margin-bottom:6px;">✅ Smart Merge Successfully Executed!</div>
+        <div>Merged <strong>${data.files_merged_count}</strong> files into canonical table: <code>${escapeHtml(data.consolidated_filename)}</code></div>
+        <div style="margin-top:4px;">
+          • Total Rows Combined: <strong>${(data.total_raw_rows || 0).toLocaleString()}</strong><br>
+          • Duplicates De-duplicated: <strong style="color:#f59e0b;">${(data.duplicates_removed || 0).toLocaleString()}</strong><br>
+          • Final Consolidated Rows: <strong style="color:#38bdf8;">${(data.final_merged_rows || 0).toLocaleString()}</strong><br>
+          • Primary Keys Enforced: <code>${(data.primary_keys || []).join(', ')}</code>
+        </div>
+      `;
+      showToast('Merge Completed', `Consolidated ${entity} files (${data.final_merged_rows} rows).`, 'success');
+      loadClientFileTracker();
+    } else {
+      resBox.style.display = 'block';
+      resBox.style.background = 'rgba(239, 68, 68, 0.1)';
+      resBox.style.borderColor = '#ef4444';
+      resBox.innerHTML = `<strong style="color:#ef4444;">Error:</strong> ${escapeHtml(data.message || 'Merge failed')}`;
+      showToast('Merge Failed', data.message || 'Could not complete merge.', 'error');
+    }
+  } catch (err) {
+    resBox.style.display = 'block';
+    resBox.style.background = 'rgba(239, 68, 68, 0.1)';
+    resBox.style.borderColor = '#ef4444';
+    resBox.innerHTML = `<strong style="color:#ef4444;">Error:</strong> ${escapeHtml(err.message)}`;
+    showToast('Merge Failed', err.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '⚡ Execute Smart Merge & Deduplicate';
+  }
+}
+
+function openRegisterFileModal() {
+  const modal = document.getElementById('modal-register-file');
+  if (modal) modal.style.display = 'flex';
+}
+
+function closeRegisterFileModal() {
+  const modal = document.getElementById('modal-register-file');
+  if (modal) modal.style.display = 'none';
+}
+
+async function submitRegisterFile() {
+  const entity = document.getElementById('reg-entity-select').value;
+  const fileInput = document.getElementById('reg-file-upload');
+  const pathInput = document.getElementById('reg-file-path').value.trim();
+  const notes = document.getElementById('reg-notes').value.trim();
+
+  let payload = {
+    client_id: 'CL_UCH_001',
+    entity_type: entity,
+    notes: notes || 'Registered via Studio Portal'
+  };
+
+  if (fileInput.files && fileInput.files.length > 0) {
+    const file = fileInput.files[0];
+    const reader = new FileReader();
+    reader.onload = async function(e) {
+      const b64 = e.target.result.split(',')[1];
+      payload.filename = file.name;
+      payload.content_base64 = b64;
+      await _sendRegisterRequest(payload);
+    };
+    reader.readAsDataURL(file);
+  } else if (pathInput) {
+    payload.file_path = pathInput;
+    await _sendRegisterRequest(payload);
+  } else {
+    showToast('Missing File', 'Please select a CSV file or enter a server file path.', 'warning');
+  }
+}
+
+async function _sendRegisterRequest(payload) {
+  try {
+    const res = await fetch('/api/client_tracker/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (res.ok && data.status === 'SUCCESS') {
+      showToast('File Registered', `Registered ${data.entry.filename} (v${data.entry.version}) in catalog.`, 'success');
+      closeRegisterFileModal();
+      loadClientFileTracker();
+    } else {
+      showToast('Registration Error', data.message || 'Failed to register file', 'error');
+    }
+  } catch (err) {
+    showToast('Registration Error', err.message, 'error');
+  }
+}
+
+/* ==============================================================================
+   Record & Row Drift Observability Engine
+   ============================================================================== */
+
+async function loadRecordDriftData() {
+  const cont = document.getElementById('ent-record-drift-content');
+  const entitySelect = document.getElementById('select-drift-entity');
+  const entity = entitySelect ? entitySelect.value : 'item_master';
+  if (!cont) return;
+
+  cont.className = '';
+  cont.innerHTML = '<div class="loading">Computing vectorized record drift against baseline...</div>';
+
+  try {
+    const res = await fetch(`/api/enterprise/record_drift?client_id=CL_UCH_001&entity=${entity}`);
+    const data = await res.json();
+
+    if (data.status === 'ERROR') {
+      cont.innerHTML = `<div style="color:#ef4444; padding:12px;">Record Drift Notice: ${escapeHtml(data.message)}</div>`;
+      return;
+    }
+
+    const churn = data.record_churn || {};
+    const fieldMods = data.field_modifications || [];
+    const nullDrift = data.null_rate_drift || [];
+    const numShifts = data.numerical_shifts || [];
+    const sampleDiffs = data.sample_diffs || [];
+
+    const volumeDeltaSign = data.volume_delta >= 0 ? `+${data.volume_delta}` : `${data.volume_delta}`;
+    const volumeDeltaPct = data.volume_pct_change >= 0 ? `+${data.volume_pct_change}%` : `${data.volume_pct_change}%`;
+
+    cont.innerHTML = `
+      <!-- Summary Churn Matrix KPIs -->
+      <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap:12px; margin-bottom:16px;">
+        <div class="kpi-card" style="padding:10px;">
+          <div class="kpi-label">Baseline Rows</div>
+          <div class="kpi-value">${(data.baseline_row_count || 0).toLocaleString()}</div>
+        </div>
+        <div class="kpi-card" style="padding:10px;">
+          <div class="kpi-label">Incoming Rows</div>
+          <div class="kpi-value highlight">${(data.latest_row_count || 0).toLocaleString()}</div>
+          <div style="font-size:10px; color:${data.volume_delta >= 0 ? '#34d399' : '#f87171'}; font-weight:600;">${volumeDeltaSign} (${volumeDeltaPct})</div>
+        </div>
+        <div class="kpi-card" style="padding:10px;">
+          <div class="kpi-label">Added Rows</div>
+          <div class="kpi-value success">${(churn.added || 0).toLocaleString()}</div>
+          <div style="font-size:10px; color:var(--text-muted);">${churn.added_pct || 0}%</div>
+        </div>
+        <div class="kpi-card" style="padding:10px;">
+          <div class="kpi-label">Modified Rows</div>
+          <div class="kpi-value warning">${(churn.modified || 0).toLocaleString()}</div>
+          <div style="font-size:10px; color:var(--text-muted);">${churn.modified_pct || 0}%</div>
+        </div>
+        <div class="kpi-card" style="padding:10px;">
+          <div class="kpi-label">Dropped Rows</div>
+          <div class="kpi-value" style="color:#f87171;">${(churn.dropped || 0).toLocaleString()}</div>
+          <div style="font-size:10px; color:var(--text-muted);">${churn.dropped_pct || 0}%</div>
+        </div>
+        <div class="kpi-card" style="padding:10px;">
+          <div class="kpi-label">Unchanged Rows</div>
+          <div class="kpi-value">${(churn.unchanged || 0).toLocaleString()}</div>
+          <div style="font-size:10px; color:var(--text-muted);">${churn.unchanged_pct || 0}%</div>
+        </div>
+      </div>
+
+      <!-- Field-Level Modification Frequencies & Null-Rate Drift -->
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:14px; margin-bottom:16px;">
+        <div style="background:#090e1a; padding:12px; border-radius:8px; border:1px solid var(--border-color);">
+          <h5 style="margin:0 0 8px 0; color:#38bdf8;">Field Modification Frequencies</h5>
+          ${fieldMods.length === 0 ? '<div style="font-size:12px; color:var(--text-muted);">No field-level mutations detected across matching keys.</div>' : `
+            <div class="table-container" style="max-height:160px; overflow-y:auto;">
+              <table class="data-table" style="font-size:11px;">
+                <thead><tr><th>Field</th><th>Mutated Records</th><th>Modification %</th></tr></thead>
+                <tbody>
+                  ${fieldMods.map(f => `
+                    <tr>
+                      <td><code>${escapeHtml(f.field)}</code></td>
+                      <td>${(f.modified_records || 0).toLocaleString()}</td>
+                      <td><span class="badge ${f.modification_pct > 10 ? 'badge-warning' : 'badge-primary'}">${f.modification_pct}%</span></td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          `}
+        </div>
+
+        <div style="background:#090e1a; padding:12px; border-radius:8px; border:1px solid var(--border-color);">
+          <h5 style="margin:0 0 8px 0; color:#38bdf8;">Null-Rate Drift Spikes</h5>
+          ${nullDrift.length === 0 ? '<div style="font-size:12px; color:var(--text-muted);">No columns with missing values.</div>' : `
+            <div class="table-container" style="max-height:160px; overflow-y:auto;">
+              <table class="data-table" style="font-size:11px;">
+                <thead><tr><th>Column</th><th>Base Null %</th><th>Incoming Null %</th><th>Delta</th></tr></thead>
+                <tbody>
+                  ${nullDrift.map(n => `
+                    <tr>
+                      <td><code>${escapeHtml(n.column)}</code></td>
+                      <td>${n.baseline_null_pct}%</td>
+                      <td>${n.incoming_null_pct}%</td>
+                      <td><span class="badge ${n.spike_alert ? 'badge-danger' : 'badge-primary'}">${n.delta_pct >= 0 ? '+' : ''}${n.delta_pct}%</span></td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          `}
+        </div>
+      </div>
+
+      <!-- Numerical Distribution Shifts -->
+      ${numShifts.length > 0 ? `
+        <div style="background:#090e1a; padding:12px; border-radius:8px; border:1px solid var(--border-color); margin-bottom:16px;">
+          <h5 style="margin:0 0 8px 0; color:#38bdf8;">Statistical Distribution Shifts (Mean / Median / Max / Outliers)</h5>
+          <div class="table-container" style="max-height:160px; overflow-y:auto;">
+            <table class="data-table" style="font-size:11px;">
+              <thead><tr><th>Metric Column</th><th>Baseline Mean</th><th>Incoming Mean</th><th>Mean Shift %</th><th>Max Shift %</th><th>Alert</th></tr></thead>
+              <tbody>
+                ${numShifts.map(s => `
+                  <tr>
+                    <td><code>${escapeHtml(s.column)}</code></td>
+                    <td>${s.baseline_mean}</td>
+                    <td>${s.incoming_mean}</td>
+                    <td style="font-weight:600; color:${Math.abs(s.mean_shift_pct) > 20 ? '#f59e0b' : '#38bdf8'};">${s.mean_shift_pct >= 0 ? '+' : ''}${s.mean_shift_pct}%</td>
+                    <td>${s.max_shift_pct >= 0 ? '+' : ''}${s.max_shift_pct}%</td>
+                    <td><span class="badge ${s.shift_alert ? 'badge-warning' : 'badge-success'}">${s.shift_alert ? 'SHIFT ALERT' : 'NORMAL'}</span></td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ` : ''}
+
+      <!-- Sample Row Differences -->
+      ${sampleDiffs.length > 0 ? `
+        <div style="background:#090e1a; padding:12px; border-radius:8px; border:1px solid var(--border-color);">
+          <h5 style="margin:0 0 8px 0; color:#38bdf8;">Sample Mutated Row Diffs (Baseline ➔ Incoming)</h5>
+          <div class="table-container" style="max-height:180px; overflow-y:auto;">
+            <table class="data-table" style="font-size:11px;">
+              <thead><tr><th>Primary Key</th><th>Field</th><th>Baseline Value</th><th>Incoming Value</th></tr></thead>
+              <tbody>
+                ${sampleDiffs.map(d => `
+                  <tr>
+                    <td><code>${escapeHtml(d.primary_key)}</code></td>
+                    <td><strong>${escapeHtml(d.field)}</strong></td>
+                    <td style="color:#f87171;">${escapeHtml(d.baseline_val)}</td>
+                    <td style="color:#34d399; font-weight:600;">${escapeHtml(d.incoming_val)}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ` : ''}
+    `;
+  } catch (err) {
+    cont.innerHTML = `<div style="color:#ef4444; padding:12px;">Failed to load record drift metrics: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+function exportRecordDriftExcel() {
+  const entitySelect = document.getElementById('select-drift-entity');
+  const entity = entitySelect ? entitySelect.value : 'item_master';
+  window.location.href = `/api/enterprise/export_excel?dataset=record_drift&client_id=CL_UCH_001&entity=${encodeURIComponent(entity)}`;
+}
+
 
