@@ -1,394 +1,320 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sign In | SupplyCopia Autonomous DBT</title>
+  <meta charset="utf-8">
+  <title>SupplyCopia | Making Healthcare Affordable, One Part at a Time</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" type="image/svg+xml" href="/assets/images/new-sc-favicon.svg">
-  <!-- Google Fonts: Open Sans -->
+  <link rel="shortcut icon" href="/assets/images/new-sc-favicon.svg">
+  <link rel="alternate icon" type="image/png" href="/logo.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,300..800;1,300..800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,300;0,400;0,600;0,700;1,400&display=swap" rel="stylesheet">
 
   <style>
+    /* SupplyCopia Login Page Styles - Replicating enrichment.supplycopia.com/login */
+    :root {
+      --primaryColor: #e43946;
+      --ssoButtonColor: #e43946;
+      --ssoButtonHover: #cc2835;
+      --textDark: #2b2b2b;
+      --textSecondary: #525252;
+      --textMuted: #787878;
+      --bgGradientStart: #ffe9eb;
+      --bgGradientEnd: #ffdcdf;
+      --borderColor: #e0e0e0;
+    }
+
     * {
       box-sizing: border-box;
       margin: 0;
       padding: 0;
+    }
+
+    html, body {
+      height: 100%;
+      width: 100%;
       font-family: 'Open Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    }
-
-    body {
-      background-color: #ffffff;
-      color: #1e293b;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      overflow-x: hidden;
-    }
-
-    .login-container {
-      display: flex;
-      flex: 1;
-      min-height: 100vh;
-      width: 100%;
-    }
-
-    /* ================= LEFT SLIDER COLUMN ================= */
-    .slider-column {
-      width: 44%;
-      min-width: 420px;
-      background: linear-gradient(180deg, #FFF1F3 0%, #FFE6EA 50%, #FFDCE2 100%);
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      padding: 44px 52px;
-      position: relative;
       overflow: hidden;
-      border-right: 1px solid rgba(230, 69, 82, 0.12);
+      background-color: #ffffff;
     }
 
-    .slider-brand {
+    .container-wrapper {
       display: flex;
-      align-items: center;
-      gap: 12px;
-      z-index: 10;
+      flex-direction: row;
+      height: 100vh;
+      width: 100vw;
+      overflow: hidden;
     }
 
-    .slider-brand img {
-      height: 38px;
-      object-fit: contain;
-    }
-
-    /* Carousel Slides Container */
-    .carousel-wrapper {
+    /* Left Slider Column */
+    .slider-container {
+      width: 35%;
+      min-width: 380px;
+      height: 100vh;
       position: relative;
-      flex: 1;
+      background: transparent linear-gradient(180deg, var(--bgGradientStart), var(--bgGradientEnd)) 0 0 no-repeat padding-box;
       display: flex;
       flex-direction: column;
       justify-content: center;
       align-items: center;
-      margin: 40px 0;
-      z-index: 10;
-    }
-
-    .slide {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      width: 100%;
-      max-width: 440px;
-      text-align: center;
-      opacity: 0;
-      visibility: hidden;
-      transition: opacity 0.7s cubic-bezier(0.4, 0, 0.2, 1), transform 0.7s cubic-bezier(0.4, 0, 0.2, 1);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-    }
-
-    .slide.active {
-      opacity: 1;
-      visibility: visible;
-      transform: translate(-50%, -50%) scale(1);
-    }
-
-    .slide.slide-out-left {
-      transform: translate(-65%, -50%) scale(0.96);
-    }
-
-    .slide-image-container {
-      width: 100%;
-      height: 290px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin-bottom: 28px;
-    }
-
-    .slide-image {
-      max-width: 100%;
-      max-height: 280px;
-      object-fit: contain;
-      filter: drop-shadow(0 14px 24px rgba(230, 69, 82, 0.14));
+      padding: 40px;
       user-select: none;
-      -webkit-user-drag: none;
     }
 
-    .slide-heading {
-      font-size: 26px;
-      font-weight: 700;
-      color: #1e293b;
-      margin-bottom: 12px;
-      line-height: 1.3;
+    .slider-container .mainLogo {
+      position: absolute;
+      top: 46px;
+      left: 60px;
+      height: 38px;
+      width: auto;
     }
 
-    .slide-heading .highlight {
-      color: #E64552;
-    }
-
-    .slide-subheading {
-      font-size: 14px;
-      color: #64748b;
-      line-height: 1.6;
+    .carousel-viewport {
+      width: 100%;
       max-width: 360px;
-      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
     }
 
-    /* Carousel Pagination Indicators */
+    .slide-item {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      animation: fadeIn 0.45s ease-in-out;
+      width: 100%;
+    }
+
+    .slide-item.active {
+      display: flex;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0.3; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .picsum-img-wrapper {
+      width: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 250px;
+    }
+
+    .image-slider {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .image-slider img {
+      max-width: 280px;
+      max-height: 230px;
+      object-fit: contain;
+      filter: drop-shadow(0 6px 16px rgba(0,0,0,0.06));
+    }
+
+    .carousel-caption {
+      margin-top: 28px;
+      text-align: center;
+    }
+
+    .carousel-caption p {
+      font: normal normal 600 22px/30px 'Open Sans', sans-serif;
+      letter-spacing: 0px;
+      color: #0A0A0A;
+    }
+
+    .slider-main-text {
+      color: var(--primaryColor);
+      font-weight: 700;
+    }
+
     .carousel-indicators {
       display: flex;
-      align-items: center;
       justify-content: center;
+      align-items: center;
       gap: 8px;
-      z-index: 10;
-      margin-top: 10px;
+      margin-top: 24px;
     }
 
-    .indicator-pill {
-      height: 8px;
+    .carousel-indicators .dot {
       width: 8px;
-      border-radius: 4px;
-      background-color: #cbd5e1;
-      cursor: pointer;
-      border: none;
-      transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-
-    .indicator-pill:hover {
-      background-color: #94a3b8;
-    }
-
-    .indicator-pill.active {
-      width: 32px;
-      background-color: #E64552;
-    }
-
-    .slider-footer {
-      font-size: 12px;
-      font-weight: 600;
-      color: #94a3b8;
-      letter-spacing: 0.5px;
-      text-transform: uppercase;
-      z-index: 10;
-    }
-
-    /* Decorative background circles */
-    .slider-column::before {
-      content: '';
-      position: absolute;
-      top: -120px;
-      right: -120px;
-      width: 380px;
-      height: 380px;
+      height: 8px;
       border-radius: 50%;
-      background: radial-gradient(circle, rgba(230, 69, 82, 0.08) 0%, rgba(230, 69, 82, 0) 70%);
-      pointer-events: none;
+      background-color: #c4c4c4;
+      cursor: pointer;
+      transition: all 0.3s ease;
     }
 
-    /* ================= RIGHT SIGN-IN COLUMN ================= */
-    .signin-column {
-      flex: 1;
+    .carousel-indicators .dot.active {
+      width: 24px;
+      border-radius: 4px;
+      background-color: var(--primaryColor);
+    }
+
+    /* Right Form Column */
+    .form-container {
+      width: 65%;
+      height: 100vh;
       display: flex;
       flex-direction: column;
       justify-content: space-between;
-      padding: 44px 64px 32px 64px;
+      padding-left: 8%;
+      padding-right: 8%;
+      position: relative;
       background-color: #ffffff;
-      min-height: 100vh;
     }
 
-    .signin-header-spacer {
-      height: 38px;
-    }
-
-    .signin-content-box {
-      width: 100%;
+    .main-content {
+      margin-top: auto;
+      margin-bottom: auto;
       max-width: 440px;
-      margin: 40px auto;
-    }
-
-    .signin-title {
-      font-size: 34px;
-      font-weight: 700;
-      color: #1e293b;
-      margin-bottom: 8px;
-      letter-spacing: -0.5px;
-    }
-
-    .signin-subtitle {
-      font-size: 14.5px;
-      color: #64748b;
-      margin-bottom: 32px;
-      line-height: 1.5;
-    }
-
-    /* Primary SSO Button */
-    .btn-sso {
       width: 100%;
-      background-color: #E64552;
-      color: #ffffff;
-      font-size: 13.5px;
-      font-weight: 700;
-      letter-spacing: 0.6px;
-      padding: 14px 24px;
-      border-radius: 8px;
-      border: none;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 12px;
-      box-shadow: 0 4px 14px rgba(230, 69, 82, 0.22);
-      transition: all 0.25s ease;
-      text-decoration: none;
     }
 
-    .btn-sso:hover {
-      background-color: #cc3743;
-      transform: translateY(-1px);
-      box-shadow: 0 6px 18px rgba(230, 69, 82, 0.32);
-    }
-
-    .btn-sso:active {
-      transform: translateY(0);
-    }
-
-    .microsoft-icon {
-      width: 18px;
-      height: 18px;
-      display: inline-block;
-      flex-shrink: 0;
-    }
-
-    /* Divider */
-    .divider {
-      display: flex;
-      align-items: center;
-      margin: 28px 0;
-      color: #94a3b8;
-      font-size: 12px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-
-    .divider::before,
-    .divider::after {
-      content: '';
-      flex: 1;
-      height: 1px;
-      background-color: #e2e8f0;
-    }
-
-    .divider span {
-      padding: 0 16px;
-    }
-
-    /* Credential Form Controls */
-    .form-group {
-      margin-bottom: 18px;
-    }
-
-    .form-label {
-      display: block;
-      font-size: 13px;
-      font-weight: 600;
-      color: #334155;
+    .get-started {
+      font: normal normal 700 38px/52px 'Open Sans', sans-serif;
+      letter-spacing: 0;
+      color: var(--textDark);
       margin-bottom: 6px;
     }
 
-    .form-input {
-      width: 100%;
-      padding: 11px 14px;
-      font-size: 14px;
-      border: 1px solid #cbd5e1;
-      border-radius: 6px;
-      color: #1e293b;
-      outline: none;
-      transition: border-color 0.2s, box-shadow 0.2s;
+    .email-valid {
+      font: normal normal 400 16px/24px 'Open Sans', sans-serif;
+      letter-spacing: 0;
+      color: var(--textSecondary);
+      margin-bottom: 32px;
     }
 
-    .form-input:focus {
-      border-color: #E64552;
-      box-shadow: 0 0 0 3px rgba(230, 69, 82, 0.12);
+    .sso-button-group {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      width: 100%;
+      max-width: 360px;
     }
 
-    .btn-credential {
+    .primary-btn-normal.sso-login-button {
       width: 100%;
-      background-color: #ffffff;
-      color: #334155;
-      border: 1px solid #cbd5e1;
-      font-size: 13.5px;
-      font-weight: 600;
-      padding: 11px 20px;
-      border-radius: 6px;
+      height: 48px;
+      background-color: var(--ssoButtonColor);
+      color: #ffffff;
+      border: none;
+      border-radius: 4px;
+      font: normal normal 600 15px/20px 'Open Sans', sans-serif;
+      letter-spacing: 0.2px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
       cursor: pointer;
+      text-decoration: none;
+      box-shadow: 0 4px 10px rgba(228, 57, 70, 0.28);
       transition: all 0.2s ease;
     }
 
-    .btn-credential:hover {
-      background-color: #f8fafc;
-      border-color: #94a3b8;
-      color: #0f172a;
+    .primary-btn-normal.sso-login-button:hover {
+      background-color: var(--ssoButtonHover);
+      box-shadow: 0 6px 14px rgba(228, 57, 70, 0.38);
+      transform: translateY(-1px);
     }
 
-    .alert-box {
-      display: none;
-      padding: 10px 14px;
-      border-radius: 6px;
-      font-size: 13px;
-      margin-bottom: 16px;
+    .primary-btn-normal.sso-login-button:active {
+      transform: translateY(0);
     }
 
-    .alert-danger {
-      background-color: #fef2f2;
-      border: 1px solid #fecaca;
-      color: #b91c1c;
+    .sso-icon {
+      width: 20px;
+      height: 20px;
+      flex-shrink: 0;
     }
 
-    .alert-success {
-      background-color: #f0fdf4;
-      border: 1px solid #bbf7d0;
-      color: #15803d;
+
+
+    /* Footer Section */
+    .bottom-info {
+      margin-bottom: 24px;
     }
 
-    /* ================= FOOTER LINKS ================= */
-    .signin-footer {
-      border-top: 1px solid #f1f5f9;
-      padding-top: 24px;
+    .footer-wrapper {
+      width: fit-content;
+    }
+
+    .footer-wrapper a {
+      font: normal normal normal 12px/17px 'Open Sans', sans-serif;
+      letter-spacing: 0;
+      color: var(--textMuted);
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+
+    .footer-wrapper a:hover {
+      color: var(--textDark);
+      text-decoration: underline;
+    }
+
+    .link-text {
       display: flex;
-      flex-direction: column;
+      align-items: center;
+      flex-wrap: wrap;
+      line-height: 1.8;
+    }
+
+    .seperator {
+      font: normal normal normal 12px/17px 'Open Sans', sans-serif;
+      color: var(--textMuted);
+      margin-right: 4px;
+      margin-left: 4px;
+    }
+
+    .icon-wrapper {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 16px;
+      margin-top: 12px;
+    }
+
+    .reserved-text {
+      font: normal normal normal 12px/17px 'Open Sans', sans-serif;
+      color: var(--textDark);
+      font-weight: 600;
+      opacity: 0.85;
+    }
+
+    .reserved-text a {
+      color: var(--textDark);
+      font-weight: 600;
+    }
+
+    .link-icons {
+      display: inline-flex;
       align-items: center;
       gap: 12px;
     }
 
-    .footer-links-row {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: center;
-      gap: 16px 20px;
+    .link-icons a {
+      display: inline-flex;
+      align-items: center;
     }
 
-    .footer-link {
-      color: #64748b;
-      text-decoration: none;
-      font-size: 12.5px;
-      font-weight: 500;
-      transition: color 0.2s ease;
+    .link-icons img {
+      width: 22px;
+      height: 22px;
+      opacity: 0.75;
+      transition: opacity 0.2s, transform 0.2s;
     }
 
-    .footer-link:hover {
-      color: #E64552;
-      text-decoration: underline;
+    .link-icons img:hover {
+      opacity: 1;
+      transform: scale(1.08);
     }
 
-    .footer-copyright {
-      font-size: 12px;
-      color: #94a3b8;
-    }
-
-    /* Loading Spinner */
     .spinner {
       border: 2px solid rgba(255, 255, 255, 0.3);
       border-radius: 50%;
@@ -404,275 +330,207 @@
       100% { transform: rotate(360deg); }
     }
 
-    /* Responsive */
-    @media (max-width: 960px) {
-      .login-container {
-        flex-direction: column;
+    /* Responsive adjustments */
+    @media screen and (max-width: 1024px) {
+      .slider-container {
+        display: none;
       }
-      .slider-column {
+      .form-container {
         width: 100%;
-        min-width: 100%;
-        min-height: 480px;
-        padding: 32px 24px;
-      }
-      .signin-column {
-        padding: 32px 24px;
+        padding: 32px;
       }
     }
   </style>
 </head>
 <body>
+  <div class="container-wrapper">
+    <!-- Left Column: Carousel Slider -->
+    <div class="slider-container" id="sliderContainer">
+      <img src="/assets/images/Group 4099.svg" alt="SupplyCopia" class="mainLogo" onerror="this.src='/logo.png'">
 
-  <div class="login-container">
-
-    <!-- ================= LEFT SLIDER COLUMN ================= -->
-    <div class="slider-column" id="sliderColumn">
-      <div class="slider-brand">
-        <img src="/assets/images/Group 4099.svg" alt="SupplyCopia" onerror="this.src='/logo.png'">
-      </div>
-
-      <div class="carousel-wrapper" id="carouselWrapper">
+      <div class="carousel-viewport">
         <!-- Slide 1: CFO -->
-        <div class="slide active" data-slide-index="0">
-          <div class="slide-image-container">
-            <img class="slide-image" src="/assets/images/slider_Img_01.png" alt="CFO">
+        <div class="slide-item active" data-slide="0">
+          <div class="picsum-img-wrapper">
+            <div class="image-slider">
+              <img src="/assets/images/slider_Img_01.png" alt="CFO">
+            </div>
           </div>
-          <h2 class="slide-heading">We make life better for <span class="highlight">CFO</span></h2>
-          <p class="slide-subheading">Drive strategic cost management and financial clarity across every case.</p>
+          <div class="carousel-caption">
+            <p>We make life better for <span class="slider-main-text">CFO</span></p>
+          </div>
         </div>
 
         <!-- Slide 2: Supply Chain -->
-        <div class="slide" data-slide-index="1">
-          <div class="slide-image-container">
-            <img class="slide-image" src="/assets/images/slider_Img_02.png" alt="Supply Chain">
+        <div class="slide-item" data-slide="1">
+          <div class="picsum-img-wrapper">
+            <div class="image-slider">
+              <img src="/assets/images/slider_Img_02.png" alt="Supply Chain">
+            </div>
           </div>
-          <h2 class="slide-heading">We make life better for <span class="highlight">Supply Chain</span></h2>
-          <p class="slide-subheading">Ensure supplies are available, compliant, and cost-effective for every procedure.</p>
+          <div class="carousel-caption">
+            <p>We make life better for <span class="slider-main-text">Supply Chain</span></p>
+          </div>
         </div>
 
         <!-- Slide 3: Data & Analytics -->
-        <div class="slide" data-slide-index="2">
-          <div class="slide-image-container">
-            <img class="slide-image" src="/assets/images/slider_Img_03.png" alt="Data & Analytics">
+        <div class="slide-item" data-slide="2">
+          <div class="picsum-img-wrapper">
+            <div class="image-slider">
+              <img src="/assets/images/slider_Img_03.png" alt="Data & Analytics">
+            </div>
           </div>
-          <h2 class="slide-heading">We make life better for <span class="highlight">Data & Analytics</span></h2>
-          <p class="slide-subheading">Turn procedural variance into actionable intelligence and standard-of-care benchmarks.</p>
+          <div class="carousel-caption">
+            <p>We make life better for <span class="slider-main-text">Data & Analytics</span></p>
+          </div>
         </div>
 
         <!-- Slide 4: Sales -->
-        <div class="slide" data-slide-index="3">
-          <div class="slide-image-container">
-            <img class="slide-image" src="/assets/images/slider_Img_04.png" alt="Sales">
+        <div class="slide-item" data-slide="3">
+          <div class="picsum-img-wrapper">
+            <div class="image-slider">
+              <img src="/assets/images/slider_Img_04.png" alt="Sales">
+            </div>
           </div>
-          <h2 class="slide-heading">We make life better for <span class="highlight">Sales</span></h2>
-          <p class="slide-subheading">Engage clinical and administrative leaders with objective value-based insights.</p>
+          <div class="carousel-caption">
+            <p>We make life better for <span class="slider-main-text">Sales</span></p>
+          </div>
         </div>
-      </div>
 
-      <div class="carousel-indicators" id="carouselIndicators">
-        <button class="indicator-pill active" data-slide-to="0" aria-label="Slide 1: CFO"></button>
-        <button class="indicator-pill" data-slide-to="1" aria-label="Slide 2: Supply Chain"></button>
-        <button class="indicator-pill" data-slide-to="2" aria-label="Slide 3: Data & Analytics"></button>
-        <button class="indicator-pill" data-slide-to="3" aria-label="Slide 4: Sales"></button>
-      </div>
-
-      <div class="slider-footer">
-        SupplyCopia Autonomous DBT &amp; Intelligence Studio
+        <!-- Carousel Indicators -->
+        <div class="carousel-indicators">
+          <span class="dot active" onclick="goToSlide(0)"></span>
+          <span class="dot" onclick="goToSlide(1)"></span>
+          <span class="dot" onclick="goToSlide(2)"></span>
+          <span class="dot" onclick="goToSlide(3)"></span>
+        </div>
       </div>
     </div>
 
-    <!-- ================= RIGHT SIGN-IN COLUMN ================= -->
-    <div class="signin-column">
-      <div class="signin-header-spacer"></div>
+    <!-- Right Column: SSO Login Form (NO username or password fields) -->
+    <div class="form-container">
+      <div class="main-content">
+        <h1 class="get-started">Get started</h1>
+        <p class="email-valid">Sign in with your organization SSO to access the Autonomous DBT Studio.</p>
 
-      <div class="signin-content-box">
-        <h1 class="signin-title">Sign In</h1>
-        <p class="signin-subtitle">Welcome back! Please enter your details or sign in with SSO.</p>
+        <!-- Dynamic Error Alert -->
+        <div id="alertBox" style="display:none; margin-bottom:20px; padding:12px 16px; border-radius:4px; font-size:13.5px; background:#fef2f2; border:1px solid #fecaca; color:#b91c1c;"></div>
 
-        <!-- Dynamic Alert Message -->
-        <div id="alertBox" class="alert-box alert-danger"></div>
-
-        <!-- Microsoft Entra ID SAML 2.0 SSO Button -->
-        <button id="ssoButton" class="btn-sso" onclick="handleSSOLogin()">
-          <svg class="microsoft-icon" viewBox="0 0 21 21" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect x="1" y="1" width="9" height="9" fill="#f25022"/>
-            <rect x="11" y="1" width="9" height="9" fill="#7fba00"/>
-            <rect x="1" y="11" width="9" height="9" fill="#00a4ef"/>
-            <rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
-          </svg>
-          <span id="ssoButtonText">SIGN IN WITH SUPPLYCOPIA SSO</span>
-        </button>
-
-        <!-- Divider -->
-        <div class="divider">
-          <span>or sign in with credentials</span>
-        </div>
-
-        <!-- Standard / Local Login Form -->
-        <form id="credentialForm" onsubmit="handleDirectLogin(event)">
-          <div class="form-group">
-            <label class="form-label" for="username">Email or Username</label>
-            <input type="text" id="username" class="form-input" placeholder="admin or name@supplycopia.com" required autocomplete="username">
-          </div>
-          <div class="form-group">
-            <label class="form-label" for="password">Password</label>
-            <input type="password" id="password" class="form-input" placeholder="••••••••••••" required autocomplete="current-password">
-          </div>
-          <button type="submit" id="submitBtn" class="btn-credential">
-            Sign In with Password
+        <div class="sso-button-group">
+          <button type="button" class="primary-btn-normal sso-login-button" id="btnSsoLogin" onclick="handleSSOLogin()">
+            <svg class="sso-icon" viewBox="0 0 21 21" width="20" height="20">
+              <rect x="1" y="1" width="9" height="9" fill="#f25022"/>
+              <rect x="11" y="1" width="9" height="9" fill="#7fba00"/>
+              <rect x="1" y="11" width="9" height="9" fill="#00a4ef"/>
+              <rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
+            </svg>
+            <span id="ssoBtnText">Sign in with SupplyCopia SSO</span>
           </button>
-        </form>
+        </div>
       </div>
 
-      <!-- Footer Links Matching SupplyCopia -->
-      <footer class="signin-footer">
-        <div class="footer-links-row">
-          <a class="footer-link" href="https://www.supplycopia.com/about-us" target="_blank" rel="noopener noreferrer">About Us</a>
-          <a class="footer-link" href="https://www.supplycopia.com/ceo-corner" target="_blank" rel="noopener noreferrer">CEO Corner</a>
-          <a class="footer-link" href="https://www.supplycopia.com/customer-stories" target="_blank" rel="noopener noreferrer">Customer Stories</a>
-          <a class="footer-link" href="https://www.supplycopia.com/blog" target="_blank" rel="noopener noreferrer">Blog</a>
-          <a class="footer-link" href="https://www.supplycopia.com/contact-us" target="_blank" rel="noopener noreferrer">Contact Us</a>
-          <a class="footer-link" href="https://www.supplycopia.com/terms-of-service" target="_blank" rel="noopener noreferrer">Terms of Service</a>
-          <a class="footer-link" href="https://www.supplycopia.com/privacy-policy" target="_blank" rel="noopener noreferrer">Privacy Policy</a>
+      <!-- Footer Section matching enrichment.supplycopia.com with social links -->
+      <div class="bottom-info">
+        <div class="footer-wrapper">
+          <div class="link-text">
+            <a href="https://www.supplycopia.com/about-us/" target="_blank">About Us</a>
+            <span class="seperator">|</span>
+            <a href="https://www.supplycopia.com/ceo-corner/" target="_blank">CEO Corner</a>
+            <span class="seperator">|</span>
+            <a href="https://www.supplycopia.com/customer-stories/" target="_blank">Customer Stories</a>
+            <span class="seperator">|</span>
+            <a href="https://www.supplycopia.com/blogs/" target="_blank">Blog</a>
+            <span class="seperator">|</span>
+            <a href="https://www.supplycopia.com/contact-us/" target="_blank">Contact Us</a>
+            <span class="seperator">|</span>
+            <a href="https://www.supplycopia.com/terms-of-service/" target="_blank">Terms</a>
+            <span class="seperator">|</span>
+            <a href="https://www.supplycopia.com/privacy-policy/" target="_blank">Privacy policy</a>
+          </div>
+          <div class="icon-wrapper">
+            <div class="reserved-text">
+              &copy; <span id="currentYear">2026</span> <a href="https://www.supplycopia.com/" target="_blank">SupplyCopia Inc.</a> | All Rights Reserved
+            </div>
+            <div class="link-icons">
+              <a href="https://www.linkedin.com/company/supplycopia/mycompany/" target="_blank" title="LinkedIn">
+                <img src="/assets/images/linkedin-icon.svg" alt="LinkedIn">
+              </a>
+              <a href="https://www.youtube.com/channel/UCIN4jaNLnDnR5kBy1u-mFog" target="_blank" title="YouTube">
+                <img src="/assets/images/youtube-icon.svg" alt="YouTube">
+              </a>
+              <a href="https://www.facebook.com/supplycopia" target="_blank" title="Facebook">
+                <img src="/assets/images/facebook-icon.svg" alt="Facebook">
+              </a>
+            </div>
+          </div>
         </div>
-        <div class="footer-copyright">
-          &copy; 2026 SupplyCopia. All rights reserved.
-        </div>
-      </footer>
+      </div>
     </div>
-
   </div>
 
   <script>
-    // ================= 5-SECOND AUTOMATIC CAROUSEL SLIDER =================
-    const slides = document.querySelectorAll('.slide');
-    const indicators = document.querySelectorAll('.indicator-pill');
+    // Dynamic Year
+    document.getElementById('currentYear').textContent = new Date().getFullYear();
+
+
+
+    // Carousel Slider Logic
     let currentSlide = 0;
-    const totalSlides = slides.length;
-    let autoSlideInterval = null;
+    const slides = document.querySelectorAll('.slide-item');
+    const dots = document.querySelectorAll('.carousel-indicators .dot');
+    let slideInterval = null;
 
-    function showSlide(index) {
-      if (index === currentSlide) return;
-
-      slides.forEach((s, idx) => {
-        if (idx === index) {
-          s.classList.remove('slide-out-left');
-          s.classList.add('active');
-        } else if (idx === currentSlide) {
-          s.classList.remove('active');
-          s.classList.add('slide-out-left');
-        } else {
-          s.classList.remove('active', 'slide-out-left');
-        }
-      });
-
-      indicators.forEach((ind, idx) => {
-        if (idx === index) {
-          ind.classList.add('active');
-        } else {
-          ind.classList.remove('active');
-        }
-      });
-
-      currentSlide = index;
+    function goToSlide(index) {
+      slides[currentSlide].classList.remove('active');
+      dots[currentSlide].classList.remove('active');
+      currentSlide = (index + slides.length) % slides.length;
+      slides[currentSlide].classList.add('active');
+      dots[currentSlide].classList.add('active');
+      resetTimer();
     }
 
     function nextSlide() {
-      const nextIndex = (currentSlide + 1) % totalSlides;
-      showSlide(nextIndex);
+      goToSlide(currentSlide + 1);
     }
 
-    function startAutoSlide() {
-      stopAutoSlide();
-      autoSlideInterval = setInterval(nextSlide, 5000); // Exactly 5 seconds
+    function resetTimer() {
+      if (slideInterval) clearInterval(slideInterval);
+      slideInterval = setInterval(nextSlide, 4500);
     }
 
-    function stopAutoSlide() {
-      if (autoSlideInterval) {
-        clearInterval(autoSlideInterval);
-        autoSlideInterval = null;
-      }
+    // Pause on hover
+    const sliderContainer = document.getElementById('sliderContainer');
+    if (sliderContainer) {
+      sliderContainer.addEventListener('mouseenter', () => clearInterval(slideInterval));
+      sliderContainer.addEventListener('mouseleave', resetTimer);
     }
 
-    // Attach indicator click events
-    indicators.forEach((ind) => {
-      ind.addEventListener('click', (e) => {
-        const targetIdx = parseInt(e.target.getAttribute('data-slide-to'), 10);
-        showSlide(targetIdx);
-        startAutoSlide(); // Reset interval on manual switch
-      });
-    });
+    resetTimer();
 
-    // Pause on hover over slider column
-    const sliderCol = document.getElementById('sliderColumn');
-    sliderCol.addEventListener('mouseenter', stopAutoSlide);
-    sliderCol.addEventListener('mouseleave', startAutoSlide);
-
-    // Start auto slide on page load
-    startAutoSlide();
-
-    // ================= SSO & AUTHENTICATION HANDLERS =================
-    function showAlert(msg, isSuccess = false) {
-      const alertBox = document.getElementById('alertBox');
-      alertBox.textContent = msg;
-      alertBox.className = 'alert-box ' + (isSuccess ? 'alert-success' : 'alert-danger');
-      alertBox.style.display = 'block';
-    }
-
+    // SSO Action Handler
     function handleSSOLogin() {
-      const btn = document.getElementById('ssoButton');
-      const text = document.getElementById('ssoButtonText');
-      btn.disabled = true;
+      const btn = document.getElementById('btnSsoLogin');
+      const text = document.getElementById('ssoBtnText');
+      btn.style.pointerEvents = 'none';
       btn.style.opacity = '0.85';
-      text.innerHTML = '<span class="spinner"></span> CONNECTING TO SSO...';
+      text.innerHTML = '<span class="spinner"></span> Connecting to SSO...';
 
-      // Redirect to server SAML initiator
-      window.location.href = '/api/saml/login?return_to=' + encodeURIComponent(window.location.pathname === '/login' ? '/' : window.location.pathname);
-    }
-
-    async function handleDirectLogin(e) {
-      e.preventDefault();
-      const username = document.getElementById('username').value.trim();
-      const password = document.getElementById('password').value;
-      const submitBtn = document.getElementById('submitBtn');
-
-      if (!username || !password) {
-        showAlert('Please enter both username and password.');
-        return;
-      }
-
-      submitBtn.disabled = true;
-      submitBtn.textContent = 'Signing in...';
-
-      try {
-        const res = await fetch('/api/auth/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username, password })
-        });
-
-        const data = await res.json();
-        if (res.ok && data.success) {
-          showAlert('Signed in successfully! Redirecting...', true);
-          setTimeout(() => {
-            window.location.href = '/';
-          }, 400);
-        } else {
-          showAlert(data.error || 'Invalid credentials. Please verify your username and password.');
-          submitBtn.disabled = false;
-          submitBtn.textContent = 'Sign In with Password';
-        }
-      } catch (err) {
-        showAlert('Network error connecting to login server.');
-        submitBtn.disabled = false;
-        submitBtn.textContent = 'Sign In with Password';
+      const isLocalhost = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.port === '8081');
+      if (isLocalhost) {
+        // On localhost, bypass SSO and redirect directly to protected root (which uses Basic Auth)
+        window.location.href = '/';
+      } else {
+        // On hosted domain, initiate Microsoft Entra ID SAML 2.0 flow
+        window.location.href = '/api/saml/login?return_to=/';
       }
     }
 
-    // Check if URL has error query param (e.g. from failed SAML assertion)
+    // Check for error in query string
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.has('error')) {
-      showAlert(urlParams.get('error'));
+      const alertBox = document.getElementById('alertBox');
+      alertBox.textContent = urlParams.get('error');
+      alertBox.style.display = 'block';
     }
   </script>
 </body>

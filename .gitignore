@@ -11,6 +11,9 @@
 *.key
 *.token
 *.secret
+*.cer
+*.crt
+atb-dbt-sso-credentials/
 
 # Database & Engine Binaries
 *.duckdb

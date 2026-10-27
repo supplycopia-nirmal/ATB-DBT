@@ -265,23 +265,22 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         directory = str(Path(__file__).resolve().parent)
         super().__init__(*args, directory=directory, **kwargs)
 
-    def _get_session_user(self) -> Optional[Dict[str, Any]]:
-        """Extracts user information from signed session cookie or basic auth header."""
-        # 1. Check signed session cookie
-        cookie_header = self.headers.get('Cookie')
-        if cookie_header:
-            cookie = SimpleCookie()
-            try:
-                cookie.load(cookie_header)
-                if 'sc_atb_session' in cookie:
-                    token = cookie['sc_atb_session'].value
-                    user_payload = saml_handler.verify_session_token(token)
-                    if user_payload:
-                        return user_payload
-            except Exception:
-                pass
+    def _is_localhost(self) -> bool:
+        """Determines if the request is destined for localhost/127.0.0.1 development."""
+        host = self.headers.get('Host', '').split(':')[0].strip().lower()
+        if host in ['localhost', '127.0.0.1', '0.0.0.0', '::1', 'testserver']:
+            return True
+        if not host:
+            client_ip = self._get_client_ip()
+            return client_ip in ['127.0.0.1', '::1']
+        return False
 
-        # 2. Check HTTP Basic Authentication
+    def _get_session_user(self) -> Optional[Dict[str, Any]]:
+        """Extracts user information:
+        - On localhost: Only validates HTTP Basic Auth credentials (admin / APP_AUTH_PASSWORD).
+        - On hosted domain: Validates signed SAML 2.0 session cookie (sc_atb_session).
+        """
+        # 1. HTTP Basic Authentication (Enforced on localhost, also supported for headless/scripting)
         auth_header = self.headers.get('Authorization')
         if auth_header and auth_header.startswith('Basic '):
             try:
@@ -298,10 +297,29 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                     }
             except Exception:
                 pass
+
+        # If on localhost, do not fallback to SSO cookies; enforce Basic Auth strictly
+        if self._is_localhost():
+            return None
+
+        # 2. Check signed SAML session cookie for hosted domain
+        cookie_header = self.headers.get('Cookie')
+        if cookie_header:
+            cookie = SimpleCookie()
+            try:
+                cookie.load(cookie_header)
+                if 'sc_atb_session' in cookie:
+                    token = cookie['sc_atb_session'].value
+                    user_payload = saml_handler.verify_session_token(token)
+                    if user_payload:
+                        return user_payload
+            except Exception:
+                pass
+
         return None
 
     def _check_auth(self) -> bool:
-        """Enforces session cookie or HTTP Basic Authentication."""
+        """Enforces session cookie on hosted domain, or HTTP Basic Auth on localhost."""
         user = self._get_session_user()
         if user:
             self.session_user = user
@@ -309,7 +327,24 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         return False
 
     def _send_auth_required(self, is_api: bool = False):
-        """Redirects browser navigation to /login, or returns 401 JSON for APIs."""
+        """Enforces authentication:
+        - On localhost: Sends 401 with WWW-Authenticate header prompting browser HTTP Basic dialog.
+        - On hosted domain: Redirects browser navigation to /login (SSO) or returns 401 JSON for APIs.
+        """
+        if self._is_localhost():
+            self.send_response(401)
+            self.send_header('WWW-Authenticate', 'Basic realm="SupplyCopia Autonomous DBT Studio"')
+            if is_api:
+                self.send_header('Content-Type', 'application/json; charset=utf-8')
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "Unauthorized", "message": "Basic authentication required"}).encode('utf-8'))
+            else:
+                self.send_header('Content-Type', 'text/html; charset=utf-8')
+                self.end_headers()
+                self.wfile.write(b"<!DOCTYPE html><html><head><title>401 Unauthorized</title></head><body><h1>401 Unauthorized</h1><p>Please log in with admin credentials.</p></body></html>")
+            return
+
+        # Hosted domain environment
         if is_api:
             self.send_response(401)
             self.send_header('Content-Type', 'application/json; charset=utf-8')
@@ -376,6 +411,16 @@ class DashboardHandler(SimpleHTTPRequestHandler):
 
         # Serve Login Portal
         if path == "/login":
+            if self._is_localhost():
+                # On localhost, bypass SSO login page and direct to Basic Auth challenge
+                if not self._check_auth():
+                    self._send_auth_required(is_api=False)
+                    return
+                self.send_response(302)
+                self.send_header('Location', '/')
+                self.end_headers()
+                return
+
             login_file = Path(__file__).resolve().parent / "login.html"
             if login_file.exists():
                 with open(login_file, "rb") as f:
@@ -435,6 +480,13 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 )
             except Exception:
                 pass
+            if self._is_localhost():
+                self.send_response(401)
+                self.send_header('WWW-Authenticate', 'Basic realm="SupplyCopia Autonomous DBT Studio"')
+                self.send_header('Content-Type', 'text/html; charset=utf-8')
+                self.end_headers()
+                self.wfile.write(b"<!DOCTYPE html><html><body><h1>Logged Out</h1><p>You have signed out of localhost. Enter credentials to sign in again.</p></body></html>")
+                return
             self.send_response(302)
             self.send_header('Location', '/login')
             self.send_header('Set-Cookie', 'sc_atb_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; SameSite=Lax')
@@ -652,60 +704,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             self.end_headers()
             return
 
-        # Direct credential login endpoint
-        if path == "/api/auth/login":
-            content_len = int(self.headers.get('Content-Length', 0))
-            body = self.rfile.read(content_len).decode('utf-8')
-            payload = json.loads(body) if body else {}
-            username = payload.get("username", "").strip()
-            password = payload.get("password", "")
 
-            if username == APP_AUTH_USERNAME and password == APP_AUTH_PASSWORD:
-                user_info = {
-                    "authenticated": True,
-                    "email": f"{username}@supplycopia.com",
-                    "name": username.title(),
-                    "roles": ["Administrator"],
-                    "idp": "Credentials"
-                }
-                token = saml_handler.create_session_token(user_info)
-                try:
-                    activity_logger.log(
-                        user_id=username,
-                        action="USER_LOGIN_PASSWORD",
-                        details="Direct password login successful",
-                        status="SUCCESS",
-                        ip_address=self._get_client_ip()
-                    )
-                except Exception:
-                    pass
-
-                resp_data = json.dumps({"success": True, "user": user_info}).encode('utf-8')
-                self.send_response(200)
-                self.send_header('Content-Type', 'application/json; charset=utf-8')
-                self.send_header('Set-Cookie', f'sc_atb_session={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800')
-                self.send_header('Content-Length', str(len(resp_data)))
-                self.end_headers()
-                self.wfile.write(resp_data)
-                return
-            else:
-                try:
-                    activity_logger.log(
-                        user_id=username or "anonymous",
-                        action="LOGIN_FAILED",
-                        details="Invalid password attempt",
-                        status="FAILED",
-                        ip_address=self._get_client_ip()
-                    )
-                except Exception:
-                    pass
-                resp_data = json.dumps({"success": False, "error": "Invalid username or password"}).encode('utf-8')
-                self.send_response(401)
-                self.send_header('Content-Type', 'application/json; charset=utf-8')
-                self.send_header('Content-Length', str(len(resp_data)))
-                self.end_headers()
-                self.wfile.write(resp_data)
-                return
 
         # All other POST requests require authentication
         if not self._check_auth():
