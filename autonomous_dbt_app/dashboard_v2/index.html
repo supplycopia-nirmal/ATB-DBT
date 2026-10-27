@@ -430,25 +430,60 @@
             </div>
             <div class="controls" style="display: flex; gap: 8px; align-items: center;">
               <select id="select-output-table" onchange="loadOutputTableData()">
-                <option value="fct_consumption_cost_savings_v4">Marts: fct_consumption_cost_savings_v4 (All Input Cols + 129 enriched)</option>
-                <option value="fct_po_cost_savings_v4">Marts: fct_po_cost_savings_v4 (All Input Cols + 34 enriched)</option>
-                <option value="fct_gap_analysis_v4">Marts: fct_gap_analysis_v4 (448 rows)</option>
-                <option value="sc_multi_tenant_consumption_savings">Multi-Tenant: sc_multi_tenant_consumption_savings</option>
+                <option value="fct_po_cost_savings_v4">Marts: fct_po_cost_savings_v4</option>
+                <option value="fct_consumption_cost_savings_v4">Marts: fct_consumption_cost_savings_v4</option>
+                <option value="fct_gap_analysis_v4">Marts: fct_gap_analysis_v4</option>
                 <option value="sc_multi_tenant_po_savings">Multi-Tenant: sc_multi_tenant_po_savings</option>
+                <option value="sc_multi_tenant_consumption_savings">Multi-Tenant: sc_multi_tenant_consumption_savings</option>
+                <option value="sc_multi_tenant_gap_analysis">Multi-Tenant: sc_multi_tenant_gap_analysis</option>
                 <option value="unmapped">⚠️ Review Unmapped &amp; Off-Contract Records</option>
               </select>
+              <button class="btn btn-secondary btn-sm" onclick="loadOutputTableData()" title="Refresh table data">🔄 Refresh</button>
               <button class="btn btn-secondary btn-sm" onclick="openRefineWithTableContext()" title="Provide clinical finding or feedback on this output mart">💬 Submit Finding</button>
             </div>
           </div>
           <div class="card-body">
-            <div id="output-meta-bar" style="margin-bottom: 12px; font-size: 13px; color: var(--text-muted);"></div>
+            <!-- Table Metrics & Dimensions Summary Bar -->
+            <div id="output-meta-bar" style="margin-bottom: 14px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center;">
+              <span class="badge badge-primary" id="output-badge-table" style="font-size: 13px; padding: 6px 12px;">Table: fct_po_cost_savings_v4</span>
+              <span class="badge badge-success" id="output-badge-rows" style="font-size: 13px; padding: 6px 12px;">Total Rows: Loading...</span>
+              <span class="badge badge-warning" id="output-badge-cols" style="font-size: 13px; padding: 6px 12px;">Total Columns: Loading...</span>
+              <span class="badge badge-info" id="output-badge-enriched" style="font-size: 13px; padding: 6px 12px;">Enriched: Dynamic</span>
+            </div>
+
             <div class="table-container" style="max-height: 480px;">
               <table class="data-table" id="output-data-table">
                 <thead id="output-table-head"></thead>
                 <tbody id="output-table-body">
-                  <tr><td class="loading">Select an output mart to explore...</td></tr>
+                  <tr><td class="loading">Loading output mart records...</td></tr>
                 </tbody>
               </table>
+            </div>
+
+            <!-- Schema Columns & Completeness Breakdown (Same as Stage 2) -->
+            <div id="output-schema-section" style="margin-top: 30px;">
+              <div class="flex-header" style="margin-bottom: 12px;">
+                <h4 id="output-schema-title">Output Mart Schema Columns &amp; Data Completeness:</h4>
+                <span id="output-schema-col-counter" class="card-hint"></span>
+              </div>
+              <div class="table-container" style="max-height: 380px;">
+                <table class="data-table" id="output-schema-table">
+                  <thead>
+                    <tr>
+                      <th>Column Name</th>
+                      <th>Inferred Role</th>
+                      <th>Data Type</th>
+                      <th>Completeness %</th>
+                      <th>Null Count</th>
+                      <th>Unique Values</th>
+                      <th>Sample Values</th>
+                    </tr>
+                  </thead>
+                  <tbody id="output-schema-body">
+                    <tr><td colspan="7" class="loading">Profiling mart columns and data completeness...</td></tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         </div>

@@ -39,6 +39,7 @@ document.addEventListener('DOMContentLoaded', () => {
   loadRawProfile();
   loadJoins();
   loadSwarmStream();
+  populateOutputTableDropdown();
   loadOutputTableData();
   loadParityDetails();
   loadSavedPipelines();
@@ -66,7 +67,10 @@ function switchStage(stageId) {
   if (stageId === 'ingest') loadClientFileTracker();
   if (stageId === 'profile') loadRawProfile();
   if (stageId === 'joins') loadJoins();
-  if (stageId === 'explorer') loadOutputTableData();
+  if (stageId === 'explorer') {
+    populateOutputTableDropdown();
+    loadOutputTableData();
+  }
   if (stageId === 'parity') loadParityDetails();
   if (stageId === 'refine') loadRefinementStage();
 
@@ -1317,9 +1321,44 @@ async function triggerGuidedSwarmWorkflow() {
 }
 
 // Stage 5 Output Data Explorer
+// Stage 5 Dynamic Output Tables Dropdown & Metadata
+async function populateOutputTableDropdown() {
+  try {
+    const res = await fetch('/api/output_tables_meta');
+    if (!res.ok) return;
+    const data = await res.json();
+    const tables = data.tables || [];
+    const select = document.getElementById('select-output-table');
+    if (!select || tables.length === 0) return;
+
+    const currentVal = select.value;
+    select.innerHTML = tables.map(t => `
+      <option value="${t.table_name}" ${t.table_name === currentVal ? 'selected' : ''}>
+        ${t.display_prefix} (${t.total_columns} cols, ${t.total_rows.toLocaleString()} rows, +${t.enriched_columns} enriched)
+      </option>
+    `).join('') + '<option value="unmapped">⚠️ Review Unmapped &amp; Off-Contract Records</option>';
+
+    if (currentVal && tables.some(t => t.table_name === currentVal)) {
+      select.value = currentVal;
+    }
+  } catch (err) {
+    console.error('Error loading output tables metadata:', err);
+  }
+}
+
+// Stage 5 Output Data Explorer & Schema Inspector
 async function loadOutputTableData() {
-  const table = document.getElementById('select-output-table')?.value || 'fct_consumption_cost_savings_v4';
-  const metaBar = document.getElementById('output-meta-bar');
+  const select = document.getElementById('select-output-table');
+  const table = select?.value || 'fct_po_cost_savings_v4';
+
+  const badgeTable = document.getElementById('output-badge-table');
+  const badgeRows = document.getElementById('output-badge-rows');
+  const badgeCols = document.getElementById('output-badge-cols');
+  const badgeEnriched = document.getElementById('output-badge-enriched');
+
+  if (badgeTable) badgeTable.textContent = `Table: ${table}`;
+  if (badgeRows) badgeRows.textContent = 'Total Rows: Loading...';
+  if (badgeCols) badgeCols.textContent = 'Total Columns: Loading...';
 
   try {
     let endpoint = `/api/table_data?table_name=${table}&limit=50`;
@@ -1331,38 +1370,82 @@ async function loadOutputTableData() {
 
     const columns = data.columns || [];
     const rows = data.rows || data.data || [];
+    const totalRows = data.total_rows || data.total_unmapped_rows || rows.length;
+    const schemaColumns = data.schema_columns || [];
 
-    if (metaBar) {
-      metaBar.innerHTML = `Showing preview of <strong>${table}</strong> &bull; Total Columns: <strong>${columns.length}</strong> (100% Raw Inputs + Transformation Enrichments)`;
+    // Update KPI Header Badges
+    if (badgeRows) badgeRows.textContent = `Total Rows: ${Number(totalRows).toLocaleString()}`;
+    if (badgeCols) badgeCols.textContent = `Total Columns: ${columns.length}`;
+    if (badgeEnriched) {
+      const baseInputs = table.includes('consumption') ? 18 : 44;
+      const enrichedCount = Math.max(0, columns.length - baseInputs);
+      badgeEnriched.textContent = `Enriched Cols: +${enrichedCount}`;
     }
 
+    // Render Preview Table
     const thead = document.getElementById('output-table-head');
     const tbody = document.getElementById('output-table-body');
 
     thead.innerHTML = `<tr>${columns.map(c => `<th>${c}</th>`).join('')}</tr>`;
 
     if (rows.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="${columns.length}" style="text-align:center; padding: 20px;">No records found. Run the pipeline to populate.</td></tr>`;
-      return;
+      tbody.innerHTML = `<tr><td colspan="${columns.length || 1}" style="text-align:center; padding: 20px;">No records found. Run the pipeline to populate.</td></tr>`;
+    } else {
+      tbody.innerHTML = rows.map(r => `
+        <tr>
+          ${columns.map(c => {
+            let val = r[c];
+            if (val === null || val === undefined) return '<td style="color:var(--text-muted);">NULL</td>';
+            if (typeof val === 'number') {
+              if (c.includes('price') || c.includes('spend') || c.includes('savings') || c.includes('amount')) {
+                return `<td>${formatCurrency(val)}</td>`;
+              }
+            }
+            return `<td>${String(val).length > 40 ? String(val).substring(0, 40) + '...' : val}</td>`;
+          }).join('')}
+        </tr>
+      `).join('');
     }
 
-    tbody.innerHTML = rows.map(r => `
-      <tr>
-        ${columns.map(c => {
-          let val = r[c];
-          if (val === null || val === undefined) return '<td style="color:var(--text-muted);">NULL</td>';
-          if (typeof val === 'number') {
-            if (c.includes('price') || c.includes('spend') || c.includes('savings') || c.includes('amount')) {
-              return `<td>${formatCurrency(val)}</td>`;
-            }
-          }
-          return `<td>${String(val).length > 40 ? String(val).substring(0, 40) + '...' : val}</td>`;
-        }).join('')}
-      </tr>
-    `).join('');
+    // Render Schema Columns & Quality Completeness Table (Stage 2 style)
+    renderOutputSchemaTable(table, schemaColumns);
   } catch (err) {
     console.error('Error loading table data:', err);
   }
+}
+
+function renderOutputSchemaTable(tableName, schemaColumns) {
+  const schemaTitle = document.getElementById('output-schema-title');
+  const colCounter = document.getElementById('output-schema-col-counter');
+  const schemaTbody = document.getElementById('output-schema-body');
+  if (!schemaTbody) return;
+
+  if (schemaTitle) schemaTitle.textContent = `Output Mart Schema Columns & Quality: ${tableName}`;
+  if (colCounter) colCounter.textContent = `Total Fields: ${schemaColumns.length}`;
+
+  if (!schemaColumns || schemaColumns.length === 0) {
+    schemaTbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding: 15px; color: var(--text-muted);">No schema breakdown available for this table.</td></tr>`;
+    return;
+  }
+
+  schemaTbody.innerHTML = schemaColumns.map(c => `
+    <tr>
+      <td><strong>${c.column_name}</strong></td>
+      <td><span class="badge ${c.inferred_role === 'Metric' ? 'badge-success' : (c.inferred_role === 'Identifier' ? 'badge-primary' : 'badge-secondary')}">${c.inferred_role || 'Attribute'}</span></td>
+      <td><code>${c.data_type}</code></td>
+      <td>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span>${c.completeness_percentage}%</span>
+          <div style="flex: 1; background: #1e293b; height: 6px; border-radius: 3px; overflow: hidden; min-width: 60px;">
+            <div style="width: ${c.completeness_percentage}%; background: ${c.completeness_percentage > 90 ? '#34d399' : (c.completeness_percentage > 50 ? '#fbbf24' : '#f87171')}; height: 100%;"></div>
+          </div>
+        </div>
+      </td>
+      <td>${c.null_count}</td>
+      <td>${c.distinct_count}</td>
+      <td style="color: var(--text-muted); font-size: 11px;">${(c.samples || []).slice(0, 3).join(', ')}</td>
+    </tr>
+  `).join('');
 }
 
 // Stage 6 100% Golden Parity Verification

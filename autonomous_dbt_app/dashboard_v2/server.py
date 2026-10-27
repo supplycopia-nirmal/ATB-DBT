@@ -349,8 +349,10 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             self._send_json(state_mgr.load())
         elif path == "/api/pipeline_summary":
             self._handle_pipeline_summary()
+        elif path == "/api/output_tables_meta":
+            self._handle_output_tables_meta()
         elif path == "/api/table_data":
-            tbl = params.get("table_name", ["fct_gap_analysis_v4"])[0]
+            tbl = params.get("table_name", [params.get("table", ["fct_po_cost_savings_v4"])[0]])[0]
             limit = int(params.get("limit", [50])[0])
             self._handle_table_data(tbl, limit)
         elif path == "/api/unmapped_data":
@@ -1644,15 +1646,110 @@ Provide a helpful, precise, professional, and knowledgeable answer as the Ask Th
             con.close()
             self._send_json({"error": str(e)}, status=500)
 
+    def _handle_output_tables_meta(self):
+        auto_db = OUTPUT_DIR / "autonomous_pipeline.duckdb"
+        if not auto_db.exists():
+            self._send_json({"status": "SUCCESS", "tables": []})
+            return
+
+        con = duckdb.connect(str(auto_db), read_only=True)
+        try:
+            available_tables = [t[0].lower() for t in con.execute("SHOW TABLES;").fetchall()]
+            
+            # Baseline raw columns counts for calculating enriched columns dynamically
+            raw_input_baseline = {
+                "fct_consumption_cost_savings_v4": 18,  # Consumption raw fields
+                "fct_po_cost_savings_v4": 44,           # Baseline PO input fields
+                "fct_gap_analysis_v4": 4,              # Dimension grouping inputs
+                "sc_multi_tenant_consumption_savings": 18,
+                "sc_multi_tenant_po_savings": 44,
+                "sc_multi_tenant_gap_analysis": 4
+            }
+
+            results = []
+            target_tables = [
+                ("fct_po_cost_savings_v4", "Marts: fct_po_cost_savings_v4"),
+                ("fct_consumption_cost_savings_v4", "Marts: fct_consumption_cost_savings_v4"),
+                ("fct_gap_analysis_v4", "Marts: fct_gap_analysis_v4"),
+                ("sc_multi_tenant_po_savings", "Multi-Tenant: sc_multi_tenant_po_savings"),
+                ("sc_multi_tenant_consumption_savings", "Multi-Tenant: sc_multi_tenant_consumption_savings"),
+                ("sc_multi_tenant_gap_analysis", "Multi-Tenant: sc_multi_tenant_gap_analysis")
+            ]
+
+            for tbl_name, display_prefix in target_tables:
+                if tbl_name in available_tables:
+                    col_info = con.execute(f"PRAGMA table_info({tbl_name});").fetchall()
+                    total_cols = len(col_info)
+                    total_rows = con.execute(f"SELECT count(*) FROM {tbl_name};").fetchone()[0]
+                    base_inputs = raw_input_baseline.get(tbl_name, 20)
+                    enriched_cols = max(0, total_cols - base_inputs)
+
+                    results.append({
+                        "table_name": tbl_name,
+                        "display_prefix": display_prefix,
+                        "total_rows": total_rows,
+                        "total_columns": total_cols,
+                        "enriched_columns": enriched_cols,
+                        "label": f"{display_prefix} ({total_cols} cols, {enriched_cols} enriched)"
+                    })
+
+            con.close()
+            self._send_json({"status": "SUCCESS", "tables": results})
+        except Exception as e:
+            con.close()
+            self._send_json({"status": "ERROR", "message": str(e), "tables": []}, status=500)
+
     def _handle_table_data(self, tbl: str, limit: int):
         auto_db = OUTPUT_DIR / "autonomous_pipeline.duckdb"
         if not auto_db.exists():
-            self._send_json({"table_name": tbl, "total_rows": 0, "columns": [], "rows": [], "data": []})
+            self._send_json({"table_name": tbl, "total_rows": 0, "columns": [], "rows": [], "data": [], "schema_columns": []})
             return
         con = duckdb.connect(str(auto_db), read_only=True)
         try:
             df = con.execute(f"SELECT * FROM {tbl} LIMIT {limit};").fetchdf()
             total_rows = con.execute(f"SELECT count(*) FROM {tbl};").fetchone()[0]
+            
+            # Retrieve schema data types from catalog
+            table_desc = con.execute(f"DESCRIBE {tbl};").fetchall()
+            type_map = {row[0]: row[1] for row in table_desc}
+
+            # Fast sampling for completeness & distinct stats
+            sample_df = con.execute(f"SELECT * FROM {tbl} LIMIT 1000;").fetchdf()
+            sample_total = len(sample_df) if len(sample_df) > 0 else 1
+
+            schema_columns = []
+            for col in df.columns:
+                null_cnt = int(sample_df[col].isnull().sum()) if col in sample_df.columns else 0
+                distinct_cnt = int(sample_df[col].nunique()) if col in sample_df.columns else 0
+                completeness = round(((sample_total - null_cnt) / sample_total) * 100.0, 1)
+
+                # Inferred semantic role
+                col_lower = col.lower()
+                if "id" in col_lower or "number" in col_lower or "key" in col_lower or "code" in col_lower:
+                    role = "Identifier"
+                elif any(m in col_lower for m in ["price", "spend", "cost", "savings", "amount", "total", "quantity", "factor"]):
+                    role = "Metric"
+                elif any(d in col_lower for d in ["date", "time", "timestamp", "as_of"]):
+                    role = "Temporal"
+                elif any(b in col_lower for b in ["is_", "has_", "matches", "compliant"]):
+                    role = "Assertion Flag"
+                else:
+                    role = "Attribute"
+
+                # Sample values
+                non_nulls = sample_df[col].dropna() if col in sample_df.columns else []
+                samples = [str(v) for v in non_nulls.head(3).tolist()]
+
+                schema_columns.append({
+                    "column_name": col,
+                    "data_type": type_map.get(col, "VARCHAR"),
+                    "inferred_role": role,
+                    "completeness_percentage": completeness,
+                    "null_count": null_cnt,
+                    "distinct_count": distinct_cnt,
+                    "samples": samples
+                })
+
             con.close()
             records = df.fillna("").to_dict(orient="records")
             self._send_json({
@@ -1660,11 +1757,12 @@ Provide a helpful, precise, professional, and knowledgeable answer as the Ask Th
                 "total_rows": total_rows,
                 "columns": list(df.columns),
                 "rows": records,
-                "data": records
+                "data": records,
+                "schema_columns": schema_columns
             })
         except Exception as e:
             con.close()
-            self._send_json({"error": str(e), "table_name": tbl, "total_rows": 0, "columns": [], "rows": [], "data": []}, status=500)
+            self._send_json({"error": str(e), "table_name": tbl, "total_rows": 0, "columns": [], "rows": [], "data": [], "schema_columns": []}, status=500)
 
     def _handle_unmapped_data(self):
         auto_db = OUTPUT_DIR / "autonomous_pipeline.duckdb"
