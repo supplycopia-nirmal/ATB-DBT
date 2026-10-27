@@ -33,7 +33,42 @@ async function safeFetchJson(url, options = {}) {
   return await res.json();
 }
 
+async function initAuthSession() {
+  try {
+    const res = await fetch('/api/auth/session');
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.authenticated && data.user) {
+        const u = data.user;
+        const name = u.name || u.sub || 'User';
+        const email = u.email || (u.sub && u.sub.includes('@') ? u.sub : 'user@supplycopia.com');
+        const idp = u.idp || 'SSO';
+
+        const nameEl = document.querySelector('.user-name');
+        if (nameEl) nameEl.textContent = name;
+
+        const authPill = document.querySelector('.auth-pill');
+        if (authPill) {
+          authPill.textContent = idp === 'Microsoft Entra ID' ? 'Entra SSO' : idp;
+          authPill.style.backgroundColor = 'rgba(230, 69, 82, 0.2)';
+          authPill.style.color = '#ff6b78';
+          authPill.style.borderColor = 'rgba(230, 69, 82, 0.4)';
+        }
+
+        const titleEl = document.querySelector('.user-title');
+        if (titleEl) titleEl.textContent = `👤 ${name}`;
+
+        const subtitleEl = document.querySelector('.user-subtitle');
+        if (subtitleEl) subtitleEl.textContent = `${email} • SupplyCopia Inc.`;
+      }
+    }
+  } catch (err) {
+    console.warn("Could not load user session:", err);
+  }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+  initAuthSession();
   pollStatus();
   loadPipelineSummary();
   loadRawProfile();

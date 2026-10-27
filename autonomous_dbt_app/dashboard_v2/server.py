@@ -2,7 +2,7 @@ import os
 import sys
 import json
 import urllib.parse
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from http.server import HTTPServer, ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 import duckdb
@@ -15,7 +15,12 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 import base64
-from autonomous_dbt_app.config import DASHBOARD_PORT, OUTPUT_DIR, BASE_DATA_DIR, APP_AUTH_USERNAME, APP_AUTH_PASSWORD
+from http.cookies import SimpleCookie
+from autonomous_dbt_app.config import (
+    DASHBOARD_PORT, OUTPUT_DIR, BASE_DATA_DIR, APP_AUTH_USERNAME, APP_AUTH_PASSWORD,
+    SAML_SP_ACS_URL, SAML_SP_ENTITY_ID, SAML_IDP_SSO_URL, HOSTED_APP_DOMAIN
+)
+from autonomous_dbt_app.core.saml_handler import saml_handler
 from autonomous_dbt_app.core.state_manager import StateManager
 from autonomous_dbt_app.orchestrator.pipeline_orchestrator import PipelineOrchestrator
 from autonomous_dbt_app.core.s3_connector import S3Connector
@@ -260,48 +265,69 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         directory = str(Path(__file__).resolve().parent)
         super().__init__(*args, directory=directory, **kwargs)
 
-    def _check_auth(self) -> bool:
-        """Enforces HTTP Basic Authentication using credentials from .env."""
-        auth_header = self.headers.get('Authorization')
-        if not auth_header or not auth_header.startswith('Basic '):
-            return False
-        try:
-            encoded_cred = auth_header.split(' ', 1)[1].strip()
-            decoded_cred = base64.b64decode(encoded_cred).decode('utf-8')
-            username, password = decoded_cred.split(':', 1)
-            return (username == APP_AUTH_USERNAME and password == APP_AUTH_PASSWORD)
-        except Exception:
-            return False
+    def _get_session_user(self) -> Optional[Dict[str, Any]]:
+        """Extracts user information from signed session cookie or basic auth header."""
+        # 1. Check signed session cookie
+        cookie_header = self.headers.get('Cookie')
+        if cookie_header:
+            cookie = SimpleCookie()
+            try:
+                cookie.load(cookie_header)
+                if 'sc_atb_session' in cookie:
+                    token = cookie['sc_atb_session'].value
+                    user_payload = saml_handler.verify_session_token(token)
+                    if user_payload:
+                        return user_payload
+            except Exception:
+                pass
 
-    def _send_auth_required(self):
-        """Sends HTTP 401 challenge requesting browser authentication prompt."""
-        self.send_response(401)
-        self.send_header('WWW-Authenticate', 'Basic realm="SupplyCopia Autonomous DBT Studio"')
-        self.send_header('Content-Type', 'text/html; charset=utf-8')
-        self.end_headers()
-        html = """<!DOCTYPE html>
-<html>
-<head><title>401 Authentication Required | SupplyCopia</title></head>
-<body style="background:#0a0f1d; color:#f8fafc; font-family:sans-serif; display:flex; justify-content:center; align-items:center; height:100vh; margin:0;">
-<div style="background:#151f38; border:1px solid #243254; border-radius:12px; padding:32px; text-align:center; max-width:440px;">
-  <h2 style="color:#38bdf8; margin-top:0;">🔒 Access Restricted</h2>
-  <p style="color:#94a3b8; font-size:14px;">Valid credentials required to access the SupplyCopia Autonomous DBT Studio.</p>
-  <button onclick="window.location.reload()" style="background:#0284c7; color:#fff; border:none; padding:10px 20px; border-radius:6px; font-weight:600; cursor:pointer;">Retry Login</button>
-</div>
-</body>
-</html>"""
-        self.wfile.write(html.encode('utf-8'))
-
-    def _get_authenticated_user(self) -> str:
+        # 2. Check HTTP Basic Authentication
         auth_header = self.headers.get('Authorization')
         if auth_header and auth_header.startswith('Basic '):
             try:
                 encoded_cred = auth_header.split(' ', 1)[1].strip()
                 decoded_cred = base64.b64decode(encoded_cred).decode('utf-8')
-                return decoded_cred.split(':', 1)[0]
+                username, password = decoded_cred.split(':', 1)
+                if username == APP_AUTH_USERNAME and password == APP_AUTH_PASSWORD:
+                    return {
+                        "sub": username,
+                        "name": username.title(),
+                        "email": f"{username}@supplycopia.com",
+                        "roles": ["Administrator"],
+                        "idp": "BasicAuth"
+                    }
             except Exception:
                 pass
-        return "admin"
+        return None
+
+    def _check_auth(self) -> bool:
+        """Enforces session cookie or HTTP Basic Authentication."""
+        user = self._get_session_user()
+        if user:
+            self.session_user = user
+            return True
+        return False
+
+    def _send_auth_required(self, is_api: bool = False):
+        """Redirects browser navigation to /login, or returns 401 JSON for APIs."""
+        if is_api:
+            self.send_response(401)
+            self.send_header('Content-Type', 'application/json; charset=utf-8')
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Unauthorized", "login_url": "/login"}).encode('utf-8'))
+        else:
+            self.send_response(302)
+            self.send_header('Location', '/login')
+            self.end_headers()
+
+    def _get_authenticated_user(self) -> str:
+        if hasattr(self, 'session_user') and self.session_user:
+            return self.session_user.get("sub") or self.session_user.get("email") or self.session_user.get("name") or "user"
+        user = self._get_session_user()
+        if user:
+            self.session_user = user
+            return user.get("sub") or user.get("email") or user.get("name") or "user"
+        return "anonymous"
 
     def _get_client_ip(self) -> str:
         forwarded = self.headers.get('X-Forwarded-For')
@@ -316,12 +342,17 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
 
-        # Static web assets and container healthcheck endpoints must load freely
-        is_unauthenticated = path in ["/health", "/healthz", "/style.css", "/app.js", "/favicon.ico", "/favicon.png", "/logo.png"] or path.endswith((".css", ".js", ".png", ".jpg", ".svg", ".woff2", ".ttf"))
+        # Unauthenticated static web assets, login portal, and healthcheck endpoints
+        is_unauthenticated = (
+            path in ["/login", "/api/saml/login", "/api/auth/session", "/api/auth/logout", "/health", "/healthz", "/style.css", "/app.js", "/favicon.ico", "/favicon.png", "/logo.png"] or
+            path.startswith(("/assets/", "/static/")) or
+            path.endswith((".css", ".js", ".png", ".jpg", ".svg", ".woff2", ".ttf", ".ico"))
+        )
 
         if not is_unauthenticated:
             if not self._check_auth():
-                self._send_auth_required()
+                is_api = path.startswith("/api/") or path.startswith("/dbt-docs")
+                self._send_auth_required(is_api=is_api)
                 return
 
         if path in ["/health", "/healthz"]:
@@ -329,6 +360,73 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             return
 
         params = urllib.parse.parse_qs(parsed.query)
+
+        # Serve Login Portal
+        if path == "/login":
+            login_file = Path(__file__).resolve().parent / "login.html"
+            if login_file.exists():
+                with open(login_file, "rb") as f:
+                    content = f.read()
+                self.send_response(200)
+                self.send_header('Content-Type', 'text/html; charset=utf-8')
+                self.send_header('Content-Length', str(len(content)))
+                self.end_headers()
+                self.wfile.write(content)
+                return
+
+        # Initiate Microsoft Entra ID SAML 2.0 SSO Redirect
+        if path == "/api/saml/login":
+            return_to = params.get("return_to", ["/"])[0]
+            host = self.headers.get("Host", "")
+            if "localhost" in host or "127.0.0.1" in host:
+                custom_acs = f"http://{host}/api/saml/acs"
+            else:
+                custom_acs = SAML_SP_ACS_URL
+
+            redirect_url, req_id = saml_handler.generate_authn_request(relay_state=return_to, custom_acs_url=custom_acs)
+            try:
+                activity_logger.log(
+                    user_id="anonymous",
+                    action="SAML_AUTH_INITIATED",
+                    details=f"Generated AuthnRequest {req_id} redirecting to Microsoft Entra ID",
+                    status="INITIATED",
+                    ip_address=self._get_client_ip()
+                )
+            except Exception:
+                pass
+
+            self.send_response(302)
+            self.send_header('Location', redirect_url)
+            self.end_headers()
+            return
+
+        # Current User Session Information
+        if path == "/api/auth/session":
+            user = getattr(self, 'session_user', None) or self._get_session_user()
+            if user:
+                self._send_json({"authenticated": True, "user": user})
+            else:
+                self._send_json({"authenticated": False})
+            return
+
+        # User Logout Endpoint
+        if path == "/api/auth/logout":
+            user_id = self._get_authenticated_user()
+            try:
+                activity_logger.log(
+                    user_id=user_id,
+                    action="USER_LOGOUT",
+                    details="User signed out successfully",
+                    status="SUCCESS",
+                    ip_address=self._get_client_ip()
+                )
+            except Exception:
+                pass
+            self.send_response(302)
+            self.send_header('Location', '/login')
+            self.send_header('Set-Cookie', 'sc_atb_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; SameSite=Lax')
+            self.end_headers()
+            return
 
         # Non-blocking activity logging for significant GET requests
         if not is_unauthenticated and path not in ["/api/status", "/api/swarm_stream", "/api/compilation_progress", "/api/activity_logs", "/api/activity_logs/metrics"]:
@@ -483,12 +581,124 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             super().do_GET()
 
     def do_POST(self):
-        if not self._check_auth():
-            self._send_auth_required()
-            return
-
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
+
+        # Unauthenticated SAML Assertion Consumer Service (ACS) endpoint
+        if path == "/api/saml/acs":
+            content_len = int(self.headers.get('Content-Length', 0))
+            post_body = self.rfile.read(content_len).decode('utf-8', errors='replace')
+            post_data = urllib.parse.parse_qs(post_body)
+
+            saml_response_list = post_data.get('SAMLResponse', [])
+            relay_state = post_data.get('RelayState', ['/'])[0] or '/'
+
+            if not saml_response_list:
+                self.send_response(302)
+                self.send_header('Location', '/login?error=Missing+SAML+Response')
+                self.end_headers()
+                return
+
+            saml_response_b64 = saml_response_list[0]
+            user_info = saml_handler.process_saml_response(saml_response_b64)
+
+            if not user_info.get("authenticated", False):
+                err = user_info.get("error", "SAML authentication failed")
+                try:
+                    activity_logger.log(
+                        user_id="anonymous",
+                        action="SAML_AUTH_FAILED",
+                        details=err,
+                        status="FAILED",
+                        ip_address=self._get_client_ip()
+                    )
+                except Exception:
+                    pass
+                self.send_response(302)
+                self.send_header('Location', f'/login?error={urllib.parse.quote(err)}')
+                self.end_headers()
+                return
+
+            token = saml_handler.create_session_token(user_info)
+
+            try:
+                activity_logger.log(
+                    user_id=user_info.get("email", "unknown"),
+                    action="SAML_AUTH_SUCCESS",
+                    details=f"Microsoft Entra ID login successful for {user_info.get('name')}",
+                    status="SUCCESS",
+                    ip_address=self._get_client_ip()
+                )
+            except Exception:
+                pass
+
+            target_url = relay_state if relay_state.startswith('/') else '/'
+            self.send_response(303)
+            self.send_header('Location', target_url)
+            self.send_header('Set-Cookie', f'sc_atb_session={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800')
+            self.end_headers()
+            return
+
+        # Direct credential login endpoint
+        if path == "/api/auth/login":
+            content_len = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(content_len).decode('utf-8')
+            payload = json.loads(body) if body else {}
+            username = payload.get("username", "").strip()
+            password = payload.get("password", "")
+
+            if username == APP_AUTH_USERNAME and password == APP_AUTH_PASSWORD:
+                user_info = {
+                    "authenticated": True,
+                    "email": f"{username}@supplycopia.com",
+                    "name": username.title(),
+                    "roles": ["Administrator"],
+                    "idp": "Credentials"
+                }
+                token = saml_handler.create_session_token(user_info)
+                try:
+                    activity_logger.log(
+                        user_id=username,
+                        action="USER_LOGIN_PASSWORD",
+                        details="Direct password login successful",
+                        status="SUCCESS",
+                        ip_address=self._get_client_ip()
+                    )
+                except Exception:
+                    pass
+
+                resp_data = json.dumps({"success": True, "user": user_info}).encode('utf-8')
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json; charset=utf-8')
+                self.send_header('Set-Cookie', f'sc_atb_session={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800')
+                self.send_header('Content-Length', str(len(resp_data)))
+                self.end_headers()
+                self.wfile.write(resp_data)
+                return
+            else:
+                try:
+                    activity_logger.log(
+                        user_id=username or "anonymous",
+                        action="LOGIN_FAILED",
+                        details="Invalid password attempt",
+                        status="FAILED",
+                        ip_address=self._get_client_ip()
+                    )
+                except Exception:
+                    pass
+                resp_data = json.dumps({"success": False, "error": "Invalid username or password"}).encode('utf-8')
+                self.send_response(401)
+                self.send_header('Content-Type', 'application/json; charset=utf-8')
+                self.send_header('Content-Length', str(len(resp_data)))
+                self.end_headers()
+                self.wfile.write(resp_data)
+                return
+
+        # All other POST requests require authentication
+        if not self._check_auth():
+            self._send_auth_required(is_api=True)
+            return
+
         content_len = int(self.headers.get('Content-Length', 0))
         body = self.rfile.read(content_len).decode('utf-8')
         payload = json.loads(body) if body else {}

@@ -58,3 +58,13 @@ JIRA_API_TOKEN = os.getenv("JIRA_API_TOKEN", "")
 # User Activity Logging Configuration
 ACTIVITY_LOG_RETENTION_DAYS = int(os.getenv("ACTIVITY_LOG_RETENTION_DAYS", "90"))
 ACTIVITY_LOG_DB_PATH = ROOT_DIR / "agent_memory" / "activity_audit_logs.db"
+
+# SupplyCopia SAML 2.0 / Microsoft Entra ID Configuration
+HOSTED_APP_DOMAIN = os.getenv("HOSTED_APP_DOMAIN", "https://atb-dbt.supplycopia.com").rstrip("/")
+SAML_SP_ENTITY_ID = os.getenv("SAML_SP_ENTITY_ID", HOSTED_APP_DOMAIN)
+SAML_SP_ACS_URL = os.getenv("SAML_SP_ACS_URL", f"{HOSTED_APP_DOMAIN}/api/saml/acs")
+SAML_IDP_ENTITY_ID = os.getenv("SAML_IDP_ENTITY_ID", "https://sts.windows.net/ae81ad54-d58a-4097-9fc7-98a2954a7a6d/")
+SAML_IDP_SSO_URL = os.getenv("SAML_IDP_SSO_URL", "https://login.microsoftonline.com/ae81ad54-d58a-4097-9fc7-98a2954a7a6d/saml2")
+SAML_IDP_SLO_URL = os.getenv("SAML_IDP_SLO_URL", "https://login.microsoftonline.com/ae81ad54-d58a-4097-9fc7-98a2954a7a6d/saml2")
+SAML_IDP_CERT_PATH = os.getenv("SAML_IDP_CERT_PATH", str(ROOT_DIR / "atb-dbt-sso-credentials" / "atb-dbt.cer"))
+SAML_SESSION_SECRET = os.getenv("SAML_SESSION_SECRET", "sc_atb_sso_session_secret_key_2026_jwt_token_secure")
