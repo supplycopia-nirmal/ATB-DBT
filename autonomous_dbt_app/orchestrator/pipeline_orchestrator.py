@@ -410,6 +410,10 @@ class PipelineOrchestrator:
                 trim(po_number) as po_number,
                 try_cast(po_line_no as integer) as po_line_no,
                 trim(item_id) as item_id,
+                upper(trim(coalesce(Invoice_uom, ''))) as invoice_uom,
+                try_cast(Invoice_uom_conv_factor as double) as invoice_uom_conv_factor,
+                upper(trim(coalesce(po_uom, ''))) as po_uom,
+                try_cast(po_uom_conv_factor as double) as po_uom_conv_factor,
                 try_cast(invoice_qty as double) as invoice_qty,
                 try_cast(invoice_unit_price as double) as invoice_unit_price,
                 try_cast(invoice_total_value as double) as invoice_total_value,
@@ -421,6 +425,7 @@ class PipelineOrchestrator:
             con.execute("""
             CREATE OR REPLACE VIEW stg_invoice_v4 AS
             SELECT '' as invoice_number, '' as po_number, 1 as po_line_no, '' as item_id,
+                   '' as invoice_uom, 1.0 as invoice_uom_conv_factor, '' as po_uom, 1.0 as po_uom_conv_factor,
                    0.0 as invoice_qty, 0.0 as invoice_unit_price, 0.0 as invoice_total_value,
                    cast('2020-01-01' as timestamp) as invoice_paid_date
             WHERE 1=0;
@@ -1150,31 +1155,59 @@ class PipelineOrchestrator:
                         case when j.uom = j.matched_contract_uom then 'Y' else 'N' end as current_contract_uom_matches_po_uom
                     from joined j
                 ),
+                inv_resolved as (
+                    select
+                        po_number,
+                        po_line_no,
+                        invoice_uom,
+                        case
+                            when invoice_uom_conv_factor > 0 then invoice_uom_conv_factor
+                            when upper(trim(invoice_uom)) = 'EA' then 1.0
+                            when invoice_uom = po_uom and abs(invoice_unit_price - coalesce(po_uom_conv_factor, 1.0)) <= 0.1 * nullif(coalesce(po_uom_conv_factor, 1.0), 0) and po_uom_conv_factor > 0 then po_uom_conv_factor
+                            else 1.0
+                        end as ea_factor,
+                        case
+                            when invoice_uom_conv_factor > 0 then 'invoice_factor'
+                            when upper(trim(invoice_uom)) = 'EA' then 'ea_factor_1'
+                            else 'ea_factor_1'
+                        end as ea_factor_rule,
+                        invoice_qty,
+                        invoice_unit_price
+                    from inv
+                    where po_number is not null and po_number != ''
+                ),
+                inv_agg_ea as (
+                    select
+                        po_number,
+                        po_line_no,
+                        max(nullif(invoice_uom, '')) as invoice_uom,
+                        coalesce(max(ea_factor), 1.0) as invoice_ea_factor,
+                        coalesce(max(ea_factor_rule), 'ea_factor_1') as invoice_ea_factor_rule,
+                        round(sum(coalesce(invoice_qty, 0.0) * coalesce(ea_factor, 1.0)), 2) as invoice_qty_total_ea,
+                        round(avg(coalesce(invoice_unit_price, 0.0) / nullif(coalesce(ea_factor, 1.0), 0)), 2) as invoice_avg_unit_price_ea,
+                        round(arg_max(coalesce(invoice_unit_price, 0.0) / nullif(coalesce(ea_factor, 1.0), 0), invoice_unit_price), 2) as invoice_last_unit_price_ea
+                    from inv_resolved
+                    group by po_number, po_line_no
+                ),
                 with_enriched as (
                     select
                         f.*,
-                        e.invoice_uom,
-                        e.invoice_ea_factor,
-                        e.invoice_ea_factor_rule,
-                        e.invoice_qty_total_ea,
-                        e.invoice_avg_unit_price_ea,
-                        e.invoice_last_unit_price_ea,
-                        e.po_ea_factor,
-                        e.po_ea_factor_rule,
-                        e.po_unit_price_ea,
-                        e.po_quantity_ea,
-                        e.contract_price_ea,
-                        e.current_contract_price_ea
+                        -- 12 Enriched Invoice & PO UOM EA Columns (Native SQL Derivation)
+                        coalesce(nullif(inv_ea.invoice_uom, ''), f.uom, 'EA') as invoice_uom,
+                        coalesce(inv_ea.invoice_ea_factor, coalesce(f.uom_conv_factor, 1.0)) as invoice_ea_factor,
+                        coalesce(inv_ea.invoice_ea_factor_rule, 'ea_factor_1') as invoice_ea_factor_rule,
+                        coalesce(inv_ea.invoice_qty_total_ea, round(f.quantity * coalesce(f.uom_conv_factor, 1.0), 2)) as invoice_qty_total_ea,
+                        coalesce(inv_ea.invoice_avg_unit_price_ea, round(f.unit_price / nullif(coalesce(f.uom_conv_factor, 1.0), 0), 2)) as invoice_avg_unit_price_ea,
+                        coalesce(inv_ea.invoice_last_unit_price_ea, round(f.unit_price / nullif(coalesce(f.uom_conv_factor, 1.0), 0), 2)) as invoice_last_unit_price_ea,
+                        coalesce(f.uom_conv_factor, 1.0) as po_ea_factor,
+                        'ea_factor_1' as po_ea_factor_rule,
+                        round(f.unit_price / nullif(coalesce(f.uom_conv_factor, 1.0), 0), 2) as po_unit_price_ea,
+                        round(f.quantity * coalesce(f.uom_conv_factor, 1.0), 2) as po_quantity_ea,
+                        round(f.contract_price / nullif(coalesce(f.uom_conv_factor, 1.0), 0), 2) as contract_price_ea,
+                        round(f.current_contract_price / nullif(coalesce(f.uom_conv_factor, 1.0), 0), 2) as current_contract_price_ea
                     from finalized f
-                    left join (
-                        select distinct on (po_number, po_line_no)
-                            po_number, po_line_no,
-                            invoice_uom, invoice_ea_factor, invoice_ea_factor_rule,
-                            invoice_qty_total_ea, invoice_avg_unit_price_ea, invoice_last_unit_price_ea,
-                            po_ea_factor, po_ea_factor_rule, po_unit_price_ea, po_quantity_ea,
-                            contract_price_ea, current_contract_price_ea
-                        from 'PO_enriched.csv'
-                    ) e on f.po_number = e.po_number and f.po_line_no = e.po_line_no
+                    left join inv_agg_ea inv_ea
+                      on f.po_number = inv_ea.po_number and f.po_line_no = inv_ea.po_line_no
                 )
                 select * from with_enriched;
                 """
