@@ -456,12 +456,14 @@ async function loadPipelineSummary() {
     const data = await res.json();
     const c = data.consumption_kpis || {};
     
-    document.getElementById('kpi-spend').textContent = formatCurrency(c.total_spend || 243934093.08);
-    document.getElementById('kpi-items').textContent = (c.total_records || 2272908).toLocaleString();
-    document.getElementById('kpi-match-rate').textContent = `${c.match_rate_pct || 51.92}%`;
-    document.getElementById('kpi-matched-count').textContent = (c.matched_items || 1179985).toLocaleString();
-    document.getElementById('kpi-savings').textContent = formatCurrency(c.total_savings || 17211888.13);
-    document.getElementById('kpi-overpayment').textContent = formatCurrency(c.total_overpayment || 182724.87);
+    if (c.total_spend !== undefined && c.total_spend !== null) {
+      document.getElementById('kpi-spend').textContent = formatCurrency(c.total_spend);
+      document.getElementById('kpi-items').textContent = Number(c.total_records || 0).toLocaleString();
+      document.getElementById('kpi-match-rate').textContent = `${c.match_rate_pct || 0}%`;
+      document.getElementById('kpi-matched-count').textContent = Number(c.matched_items || 0).toLocaleString();
+      document.getElementById('kpi-savings').textContent = formatCurrency(c.total_savings || 0);
+      document.getElementById('kpi-overpayment').textContent = formatCurrency(c.total_overpayment || 0);
+    }
   } catch (err) {
     console.error('Error loading pipeline summary:', err);
   }
