@@ -18,7 +18,7 @@ class TestSAMLHandler(unittest.TestCase):
 
     def test_generate_authn_request(self):
         redirect_url, req_id = self.handler.generate_authn_request(relay_state="/explorer")
-        self.assertTrue(req_id.startswith("SC_ATB_"))
+        self.assertTrue(req_id.startswith("_"))
         self.assertIn("https://login.microsoftonline.com", redirect_url)
         self.assertIn("SAMLRequest=", redirect_url)
         self.assertIn("RelayState=%2Fexplorer", redirect_url)

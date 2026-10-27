@@ -67,7 +67,7 @@ class SAMLHandler:
         and constructs the Microsoft Entra ID redirect URL.
         Returns: (redirect_url, request_id)
         """
-        request_id = f"SC_ATB_{uuid.uuid4().hex}"
+        request_id = f"_{uuid.uuid4()}"
         issue_instant = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         acs_url = custom_acs_url or self.sp_acs_url
 
