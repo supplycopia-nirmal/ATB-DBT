@@ -1,13 +1,6 @@
 version: 2
 
 models:
-  - name: stg_item_master
-    columns:
-      - name: item_id
-        tests:
-          - not_null
-          - unique
-
   # v4 Staging Models
   - name: stg_consumption_v4
     description: "Standardized v4 consumption records with UOM mapping, audit metadata and parsed timestamps"
