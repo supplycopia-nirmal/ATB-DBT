@@ -344,7 +344,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
 
         # Unauthenticated static web assets, login portal, and healthcheck endpoints
         is_unauthenticated = (
-            path in ["/login", "/api/saml/login", "/api/auth/session", "/api/auth/logout", "/health", "/healthz", "/style.css", "/app.js", "/favicon.ico", "/favicon.png", "/logo.png"] or
+            path in ["/login", "/api/saml/login", "/saml2/acs", "/api/saml/acs", "/saml/acs", "/api/auth/session", "/api/auth/logout", "/health", "/healthz", "/style.css", "/app.js", "/favicon.ico", "/favicon.png", "/logo.png"] or
             path.startswith(("/assets/", "/static/")) or
             path.endswith((".css", ".js", ".png", ".jpg", ".svg", ".woff2", ".ttf", ".ico"))
         )
@@ -360,6 +360,19 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             return
 
         params = urllib.parse.parse_qs(parsed.query)
+
+        # Handle SAML Cancel / Error on ACS GET
+        if path in ["/saml2/acs", "/api/saml/acs", "/saml/acs"]:
+            err = params.get("error_description", params.get("error", [""]))[0]
+            if err:
+                self.send_response(302)
+                self.send_header('Location', f'/login?error={urllib.parse.quote(err)}')
+                self.end_headers()
+                return
+            self.send_response(302)
+            self.send_header('Location', '/')
+            self.end_headers()
+            return
 
         # Serve Login Portal
         if path == "/login":
@@ -379,7 +392,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             return_to = params.get("return_to", ["/"])[0]
             host = self.headers.get("Host", "")
             if "localhost" in host or "127.0.0.1" in host:
-                custom_acs = f"http://{host}/api/saml/acs"
+                custom_acs = f"http://{host}/saml2/acs"
             else:
                 custom_acs = SAML_SP_ACS_URL
 
@@ -585,7 +598,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         path = parsed.path
 
         # Unauthenticated SAML Assertion Consumer Service (ACS) endpoint
-        if path == "/api/saml/acs":
+        if path in ["/saml2/acs", "/api/saml/acs", "/saml/acs"]:
             content_len = int(self.headers.get('Content-Length', 0))
             post_body = self.rfile.read(content_len).decode('utf-8', errors='replace')
             post_data = urllib.parse.parse_qs(post_body)

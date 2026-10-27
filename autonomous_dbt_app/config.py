@@ -62,7 +62,7 @@ ACTIVITY_LOG_DB_PATH = ROOT_DIR / "agent_memory" / "activity_audit_logs.db"
 # SupplyCopia SAML 2.0 / Microsoft Entra ID Configuration
 HOSTED_APP_DOMAIN = os.getenv("HOSTED_APP_DOMAIN", "https://atb-dbt.supplycopia.com").rstrip("/")
 SAML_SP_ENTITY_ID = os.getenv("SAML_SP_ENTITY_ID", "ab02a3b2-878b-411b-8c9c-7c42a2229c69")
-SAML_SP_ACS_URL = os.getenv("SAML_SP_ACS_URL", f"{HOSTED_APP_DOMAIN}/api/saml/acs")
+SAML_SP_ACS_URL = os.getenv("SAML_SP_ACS_URL", f"{HOSTED_APP_DOMAIN}/saml2/acs")
 SAML_IDP_ENTITY_ID = os.getenv("SAML_IDP_ENTITY_ID", "https://sts.windows.net/ae81ad54-d58a-4097-9fc7-98a2954a7a6d/")
 SAML_IDP_SSO_URL = os.getenv("SAML_IDP_SSO_URL", "https://login.microsoftonline.com/ae81ad54-d58a-4097-9fc7-98a2954a7a6d/saml2")
 SAML_IDP_SLO_URL = os.getenv("SAML_IDP_SLO_URL", "https://login.microsoftonline.com/ae81ad54-d58a-4097-9fc7-98a2954a7a6d/saml2")

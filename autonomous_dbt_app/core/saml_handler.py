@@ -70,6 +70,9 @@ class SAMLHandler:
         request_id = f"_{uuid.uuid4()}"
         issue_instant = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         acs_url = custom_acs_url or self.sp_acs_url
+        acs_attr = ""
+        if acs_url:
+            acs_attr = f' ProtocolBinding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST" AssertionConsumerServiceURL="{acs_url}"'
 
         xml_content = (
             f'<samlp:AuthnRequest xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" '
@@ -77,9 +80,7 @@ class SAMLHandler:
             f'ID="{request_id}" '
             f'Version="2.0" '
             f'IssueInstant="{issue_instant}" '
-            f'Destination="{self.idp_sso_url}" '
-            f'ProtocolBinding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST" '
-            f'AssertionConsumerServiceURL="{acs_url}">\n'
+            f'Destination="{self.idp_sso_url}"{acs_attr}>\n'
             f'  <saml:Issuer>{self.sp_entity_id}</saml:Issuer>\n'
             f'  <samlp:NameIDPolicy Format="urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified" AllowCreate="true"/>\n'
             f'</samlp:AuthnRequest>'

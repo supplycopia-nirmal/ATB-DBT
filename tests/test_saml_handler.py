@@ -9,8 +9,8 @@ from autonomous_dbt_app.core.saml_handler import SAMLHandler
 class TestSAMLHandler(unittest.TestCase):
     def setUp(self):
         self.handler = SAMLHandler(
-            sp_entity_id="https://atb-dbt.supplycopia.com",
-            sp_acs_url="https://atb-dbt.supplycopia.com/api/saml/acs",
+            sp_entity_id="ab02a3b2-878b-411b-8c9c-7c42a2229c69",
+            sp_acs_url="https://atb-dbt.supplycopia.com/saml2/acs",
             idp_entity_id="https://sts.windows.net/ae81ad54-d58a-4097-9fc7-98a2954a7a6d/",
             idp_sso_url="https://login.microsoftonline.com/ae81ad54-d58a-4097-9fc7-98a2954a7a6d/saml2",
             session_secret="test_secret_key_12345"
