@@ -530,6 +530,7 @@ async function loadRawProfile() {
     const cardsContainer = document.getElementById('profile-cards-grid');
     let files = data.files_found || [];
 
+    const allFilesCount = (data.files_found || []).length;
     const canonicalFiles = [
       "UHC_Consumption.csv",
       "UHC_CON_20260930010958.csv",
@@ -537,6 +538,14 @@ async function loadRawProfile() {
       "UHC_PO_20260930010955.csv",
       "UHC_INV_20260930010902.csv"
     ];
+    const canonicalFilesCount = (data.files_found || []).filter(f => canonicalFiles.includes(f.file_name)).length;
+
+    // Dynamically update button counts based on actual discovered files
+    const btnAll = document.getElementById('btn-filter-all');
+    if (btnAll) btnAll.textContent = `📁 All Discovered (${allFilesCount})`;
+
+    const btnCanonical = document.getElementById('btn-filter-canonical');
+    if (btnCanonical) btnCanonical.textContent = `⭐ Canonical Sources (${canonicalFilesCount || 5})`;
 
     if (activeProfileFilter === 'canonical') {
       files = files.filter(f => canonicalFiles.includes(f.file_name));
