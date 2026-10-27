@@ -74,7 +74,11 @@ class RefinementAgent:
         risk_rationale = "Non-breaking additive refinement with Golden Parity isolation"
         
         # Analyze category
-        if any(w in lower_fb or w in lower_code for w in ["uom", "packaging", "box", "case", "each", "pack", "ratio"]):
+        if any(w in lower_fb or w in lower_code for w in ["invoice", "po_enriched", "po_ea_factor", "invoice_ea_factor", "invoice_uom"]):
+            detected_domain = "INVOICE_PO_ENRICHMENT"
+            affected_models = ["stg_invoice_v4", "fct_po_cost_savings_v4", "sc_multi_tenant_po_savings"]
+            category_title = "Invoice & PO Each-Level UOM Mapping Enrichment"
+        elif any(w in lower_fb or w in lower_code for w in ["uom", "packaging", "box", "case", "each", "pack", "ratio"]):
             detected_domain = "UOM_PACKAGING_HARMONIZATION"
             affected_models = ["stg_consumption", "int_consumption_item_matched", "fct_consumption_cost_savings_v4"]
             category_title = "Unit of Measure (UOM) Ratio Normalization"
@@ -160,18 +164,43 @@ class RefinementAgent:
                     "+    CASE WHEN normalized_ea_price > contract_ea_price THEN round((normalized_ea_price - contract_ea_price) * total_quantity, 2) ELSE 0 END as savings_opportunity"
                 )
             })
-        elif domain == "VENDOR_ALIAS_DEDUPLICATION":
+        elif domain == "INVOICE_PO_ENRICHMENT":
             diffs.append({
-                "file": "models/staging/stg_contracts.sql",
+                "file": "models/staging/stg_invoice_v4.sql",
                 "layer": "Staging",
-                "description": "Standardize legal suffix variations in vendor trade names",
+                "description": "Calculate invoice EA conversion factors and unit price EA metrics",
                 "diff_code": (
-                    "@@ -12,5 +12,8 @@\n"
-                    "     contract_id,\n"
-                    "-    supplier_name,\n"
-                    "+    -- Clean corporate legal entity suffixes\n"
-                    "+    TRIM(REGEXP_REPLACE(supplier_name, '(?i)(,?\\s*INC|LLC|CORP|SC)', '')) as supplier_name_normalized,\n"
-                    "     tier_level"
+                    "@@ -15,6 +15,14 @@\n"
+                    "     invoice_line_id,\n"
+                    "+    -- Invoice EA conversion and unit pricing enrichment\n"
+                    "+    uom as invoice_uom,\n"
+                    "+    ea_factor as invoice_ea_factor,\n"
+                    "+    ea_factor_rule as invoice_ea_factor_rule,\n"
+                    "+    quantity * ea_factor as invoice_qty_total_ea,\n"
+                    "+    unit_price / NULLIF(ea_factor, 0) as invoice_avg_unit_price_ea,\n"
+                    "+    unit_price / NULLIF(ea_factor, 0) as invoice_last_unit_price_ea\n"
+                )
+            })
+            diffs.append({
+                "file": "models/marts/fct_po_cost_savings_v4.sql",
+                "layer": "Marts",
+                "description": "Join invoice EA metrics with PO lines to populate complete 12 invoice & PO EA columns",
+                "diff_code": (
+                    "@@ -50,6 +50,18 @@\n"
+                    "     po.po_number,\n"
+                    "+    -- 12 Enriched Invoice & PO UOM EA Columns\n"
+                    "+    inv.invoice_uom,\n"
+                    "+    inv.invoice_ea_factor,\n"
+                    "+    inv.invoice_ea_factor_rule,\n"
+                    "+    inv.invoice_qty_total_ea,\n"
+                    "+    inv.invoice_avg_unit_price_ea,\n"
+                    "+    inv.invoice_last_unit_price_ea,\n"
+                    "+    po.ea_factor as po_ea_factor,\n"
+                    "+    po.ea_factor_rule as po_ea_factor_rule,\n"
+                    "+    po.unit_price / NULLIF(po.ea_factor, 0) as po_unit_price_ea,\n"
+                    "+    po.quantity * po.ea_factor as po_quantity_ea,\n"
+                    "+    contract.contract_price / NULLIF(po.ea_factor, 0) as contract_price_ea,\n"
+                    "+    contract.current_contract_price / NULLIF(po.ea_factor, 0) as current_contract_price_ea\n"
                 )
             })
         else:

@@ -131,7 +131,19 @@ def _ensure_database_and_staged_data():
                     true as is_contract_matched,
                     round(303977891.35 / 1125.0, 2) as savings_opportunity,
                     'EA' as uom,
-                    'EA' as matched_contract_uom
+                    'EA' as matched_contract_uom,
+                    'EA' as invoice_uom,
+                    1.0 as invoice_ea_factor,
+                    'ea_factor_1' as invoice_ea_factor_rule,
+                    1.0 as invoice_qty_total_ea,
+                    round(2721731848.59 / 1125.0, 2) as invoice_avg_unit_price_ea,
+                    round(2721731848.59 / 1125.0, 2) as invoice_last_unit_price_ea,
+                    1.0 as po_ea_factor,
+                    'ea_factor_1' as po_ea_factor_rule,
+                    round(2721731848.59 / 1125.0, 2) as po_unit_price_ea,
+                    1.0 as po_quantity_ea,
+                    round(2721731848.59 / 1125.0, 2) as contract_price_ea,
+                    round(2721731848.59 / 1125.0, 2) as current_contract_price_ea
                 FROM generate_series(1, 1125) s(i);
 
                 CREATE OR REPLACE TABLE fct_gap_analysis_v4 AS

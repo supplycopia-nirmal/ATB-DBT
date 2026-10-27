@@ -1149,8 +1149,34 @@ class PipelineOrchestrator:
                         j.matched_contract_end_date as current_contract_end,
                         case when j.uom = j.matched_contract_uom then 'Y' else 'N' end as current_contract_uom_matches_po_uom
                     from joined j
+                ),
+                with_enriched as (
+                    select
+                        f.*,
+                        e.invoice_uom,
+                        e.invoice_ea_factor,
+                        e.invoice_ea_factor_rule,
+                        e.invoice_qty_total_ea,
+                        e.invoice_avg_unit_price_ea,
+                        e.invoice_last_unit_price_ea,
+                        e.po_ea_factor,
+                        e.po_ea_factor_rule,
+                        e.po_unit_price_ea,
+                        e.po_quantity_ea,
+                        e.contract_price_ea,
+                        e.current_contract_price_ea
+                    from finalized f
+                    left join (
+                        select distinct on (po_number, po_line_no)
+                            po_number, po_line_no,
+                            invoice_uom, invoice_ea_factor, invoice_ea_factor_rule,
+                            invoice_qty_total_ea, invoice_avg_unit_price_ea, invoice_last_unit_price_ea,
+                            po_ea_factor, po_ea_factor_rule, po_unit_price_ea, po_quantity_ea,
+                            contract_price_ea, current_contract_price_ea
+                        from 'PO_enriched.csv'
+                    ) e on f.po_number = e.po_number and f.po_line_no = e.po_line_no
                 )
-                select * from finalized;
+                select * from with_enriched;
                 """
             },
             {
